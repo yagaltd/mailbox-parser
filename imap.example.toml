@@ -1,0 +1,39 @@
+# Example IMAP config for mailbox-parser-cli.
+#
+# Copy to your own location (do NOT commit real credentials) and run:
+#   cargo run -p mailbox-parser-cli -- imap sync --config /path/to/imap.toml --out /tmp/threads.json --format json --full
+#
+# Notes:
+# - To include both Inbox + Sent, add multiple [[accounts]] entries with the SAME account_id but different mailbox.
+# - For large mailboxes, consider splitting output per thread:
+#     ... --split-by thread --out /tmp/threads_dir
+# - Incremental IMAP state is stored in `imap_state.json` next to this config file (created automatically).
+
+[[accounts]]
+host = "imap.example.com"
+username = "you@example.com"
+password = "APP_PASSWORD_OR_TOKEN"
+
+# optional (defaults shown)
+port = 993
+tls = true
+mailbox = "INBOX"
+
+# recommended
+account_id = "work"
+
+[[accounts]]
+# Same logical account_id, different mailbox (Sent).
+host = "imap.example.com"
+username = "you@example.com"
+password = "APP_PASSWORD_OR_TOKEN"
+mailbox = "Sent" # for Gmail: "[Gmail]/Sent Mail"
+account_id = "work"
+
+[[accounts]]
+# Another account (separate logical account_id).
+host = "imap.example.com"
+username = "other@example.com"
+password = "APP_PASSWORD_OR_TOKEN"
+mailbox = "INBOX"
+account_id = "personal"

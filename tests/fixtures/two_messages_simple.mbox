@@ -1,0 +1,21 @@
+From alice@example.com Tue Jan 20 12:34:56 2026
+Message-ID: <msg-1@example.com>
+Date: Tue, 20 Jan 2026 12:34:56 +0000
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Hello Bob
+Content-Type: text/plain; charset="utf-8"
+
+Hello Bob
+
+From bob@example.com Wed Jan 21 12:34:56 2026
+Message-ID: <msg-2@example.com>
+In-Reply-To: <msg-1@example.com>
+References: <msg-1@example.com>
+Date: Wed, 21 Jan 2026 12:34:56 +0000
+From: Bob <bob@example.com>
+To: Alice <alice@example.com>
+Subject: Re: Hello Bob
+Content-Type: text/plain; charset="utf-8"
+
+Reply

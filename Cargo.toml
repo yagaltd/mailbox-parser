@@ -1,0 +1,18 @@
+[package]
+name = "mailbox-parser"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1"
+chrono = { version = "0.4", features = ["serde"] }
+contacts = { path = "../contacts" }
+imap = "3.0.0-alpha.15"
+mail-parser = "0.10"
+native-tls = "0.2"
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
+toml = "0.8"
+
+[dev-dependencies]
+pretty_assertions = "1"

@@ -1,0 +1,11 @@
+From alice@example.com Tue Jan 20 12:34:56 2026
+Message-ID: <msg-3@example.com>
+Date: Tue, 20 Jan 2026 12:34:56 +0000
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Escaped
+Content-Type: text/plain; charset="utf-8"
+
+First line
+>From escaped line
+>>From double escaped

@@ -1,0 +1,19 @@
+From sender@example.com Tue Jan 20 12:34:56 2026
+Message-ID: <msg-5@example.com>
+Date: Tue, 20 Jan 2026 12:34:56 +0000
+From: Sender <sender@example.com>
+To: Receiver <receiver@example.com>
+Subject: Attachment
+Content-Type: multipart/mixed; boundary="boundary42"
+
+--boundary42
+Content-Type: text/plain; charset="utf-8"
+
+Here is attachment.
+--boundary42
+Content-Type: application/octet-stream
+Content-Disposition: attachment; filename="notes.txt"
+Content-Transfer-Encoding: base64
+
+SGVsbG8gYXR0YWNobWVudA==
+--boundary42--

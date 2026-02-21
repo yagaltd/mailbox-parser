@@ -1,4 +1,4 @@
-use mailbox_parser::{parse_rfc822, reply_text, segment_email_body};
+use mailbox_parser::{EmailBlockKind, parse_rfc822, reply_text, segment_email_body};
 use pretty_assertions::assert_eq;
 
 fn fixture(path: &str) -> Vec<u8> {
@@ -131,4 +131,58 @@ fn normalize_email_text_strips_common_unicode_junk() {
     assert!(!parsed.body_canonical.contains('\u{034F}'));
     assert!(!parsed.body_canonical.contains('\u{200C}'));
     assert!(!parsed.body_canonical.contains('\u{FEFF}'));
+}
+
+#[test]
+fn parse_multilingual_quote_headers() {
+    let cases = [
+        "On Tue, Jan 2, 2026 at 10:00 AM Alice <a@x> wrote:\n> quoted",
+        "Le mar. 2 janv. 2026 à 10:00, Alice <a@x> a écrit :\n> cité",
+        "El mar, 2 ene 2026 a las 10:00, Alice <a@x> escribió:\n> citado",
+        "Am Di., 2. Jan. 2026 um 10:00 schrieb Alice <a@x>:\n> zitiert",
+        "Il giorno 2 gen 2026, Alice <a@x> ha scritto:\n> citato",
+        "Op di 2 jan 2026 schreef Alice <a@x>:\n> geciteerd",
+        "W dniu 2 sty 2026 Alice <a@x> napisał:\n> cytat",
+        "Den 2 jan 2026 skrev Alice <a@x>:\n> citerat",
+    ];
+
+    for case in cases {
+        let text = format!("Reply body\n\n{}", case);
+        let blocks = segment_email_body(&text);
+        assert!(
+            blocks
+                .iter()
+                .any(|b| b.kind == EmailBlockKind::Quoted || b.kind == EmailBlockKind::Forwarded),
+            "expected quote/forward block for case: {case}"
+        );
+        let reply = reply_text(&text, &blocks);
+        assert!(reply.contains("Reply body"));
+        assert!(!reply.contains("quoted"));
+    }
+}
+
+#[test]
+fn parse_salutation_signature_and_disclaimer_blocks() {
+    let text = "Hello Bob,\n\nPlease find update below.\n\nBest regards,\nAlice\n\nDisclaimer: This email is confidential and intended only for the recipient.\n\nOn Tue, Jan 2, 2026 at 10:00 AM Bob <bob@x> wrote:\n> old";
+    let blocks = segment_email_body(text);
+
+    assert!(blocks.iter().any(|b| b.kind == EmailBlockKind::Salutation));
+    assert!(blocks.iter().any(|b| b.kind == EmailBlockKind::Signature));
+    assert!(blocks.iter().any(|b| b.kind == EmailBlockKind::Disclaimer));
+
+    let reply = reply_text(text, &blocks);
+    assert!(reply.contains("Please find update below."));
+    assert!(!reply.contains("Best regards"));
+    assert!(!reply.contains("Disclaimer:"));
+    assert!(!reply.contains("On Tue"));
+}
+
+#[test]
+fn does_not_treat_hyphen_bullets_as_signature() {
+    let text = "Hi team,\n\nAgenda:\n- item one\n- item two\n- item three\n\nLet me know if we should reorder.\n";
+    let blocks = segment_email_body(text);
+    assert!(!blocks.iter().any(|b| b.kind == EmailBlockKind::Signature));
+    let reply = reply_text(text, &blocks);
+    assert!(reply.contains("Agenda:"));
+    assert!(reply.contains("- item one"));
 }

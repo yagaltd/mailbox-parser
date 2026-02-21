@@ -3,10 +3,12 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum EmailBlockKind {
+    Salutation,
     Reply,
     Quoted,
     Forwarded,
     Signature,
+    Disclaimer,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -130,28 +132,146 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
 
     let get_line = |(s, e): (usize, usize)| -> &str { text.get(s..e).unwrap_or("") };
 
+    let line_core = |line: &str| -> String {
+        let mut s = line.trim_start();
+        while let Some(rest) = s.strip_prefix('>') {
+            s = rest.trim_start();
+        }
+        s.trim().to_ascii_lowercase()
+    };
+
+    let starts_with_any =
+        |s: &str, patterns: &[&str]| -> bool { patterns.iter().any(|p| s.starts_with(p)) };
+
+    const FORWARD_MARKERS: &[&str] = &[
+        "---- forwarded message ----",
+        "-----forwarded message-----",
+        "begin forwarded message",
+        "mensaje reenviado",
+        "nachricht weitergeleitet",
+        "messaggio inoltrato",
+        "bericht doorgestuurd",
+        "wiadomość dalej",
+    ];
+    const QUOTE_SEPARATORS: &[&str] = &[
+        "-----original message-----",
+        "----original message----",
+        "original message",
+        "mensaje original",
+        "message d'origine",
+        "ursprüngliche nachricht",
+        "messaggio originale",
+        "oorspronkelijk bericht",
+        "wiadomość oryginalna",
+    ];
+    const HEADER_KEYS: &[&str] = &[
+        "from:",
+        "sent:",
+        "date:",
+        "to:",
+        "cc:",
+        "subject:",
+        "message-id:",
+        "de:",
+        "envoyé:",
+        "objet:",
+        "von:",
+        "gesendet:",
+        "betreff:",
+        "da:",
+        "inviato:",
+        "oggetto:",
+        "van:",
+        "verzonden:",
+        "onderwerp:",
+        "od:",
+        "wysłano:",
+        "temat:",
+    ];
+    const WROTE_TOKENS: &[&str] = &[
+        "wrote",
+        "a écrit",
+        "escribió",
+        "schrieb",
+        "ha scritto",
+        "schreef",
+        "napisał",
+        "skrev",
+    ];
+    const SALUTATION_PREFIXES: &[&str] = &[
+        "hi",
+        "hello",
+        "dear",
+        "bonjour",
+        "salut",
+        "hola",
+        "buenos",
+        "hallo",
+        "hej",
+        "ciao",
+        "dzień dobry",
+        "witam",
+    ];
+    const SIGNATURE_CUES: &[&str] = &[
+        "best regards",
+        "kind regards",
+        "regards",
+        "thanks",
+        "cheers",
+        "sincerely",
+        "mit freundlichen grüßen",
+        "viele grüße",
+        "cordialement",
+        "bien à vous",
+        "saludos",
+        "un saludo",
+        "distinti saluti",
+        "vriendelijke groet",
+        "pozdrawiam",
+        "med vänlig hälsning",
+    ];
+    const MOBILE_SIGNATURE_CUES: &[&str] = &[
+        "sent from my",
+        "get outlook for",
+        "sent from outlook",
+        "envoyé depuis mon",
+        "enviado desde mi",
+        "gesendet von meinem",
+        "inviato da",
+        "wysłane z",
+    ];
+    const DISCLAIMER_CUES: &[&str] = &[
+        "disclaimer:",
+        "confidentiality notice",
+        "confidentiality:",
+        "this email",
+        "ce message",
+        "este correo",
+        "diese e-mail",
+        "questo messaggio",
+        "ten e-mail",
+        "ta wiadomość",
+    ];
+
     let is_forward_marker_line = |t: &str| {
-        let tl = t.trim().to_ascii_lowercase();
-        tl.starts_with("---- forwarded message ----")
-            || tl.starts_with("-----forwarded message-----")
-            || tl.starts_with("begin forwarded message")
-            || tl.contains("forwarded message")
+        let tl = line_core(t);
+        starts_with_any(&tl, FORWARD_MARKERS) || tl.contains("forwarded message")
     };
 
     let is_quote_marker_line = |t: &str| {
-        let tl = t.trim().to_ascii_lowercase();
-        tl.starts_with("-----original message-----")
-            || tl.starts_with("----original message----")
-            || (tl.starts_with("on ") && tl.contains(" wrote:"))
+        let tl = line_core(t);
+        let locale_on_prefix = ["on ", "le ", "el ", "am ", "il ", "op ", "w dniu ", "den "];
+        starts_with_any(&tl, QUOTE_SEPARATORS)
+            || (tl.starts_with("on ")
+                && tl.ends_with(':')
+                && WROTE_TOKENS.iter().any(|w| tl.contains(w)))
+            || (locale_on_prefix.iter().any(|p| tl.starts_with(p))
+                && tl.ends_with(':')
+                && WROTE_TOKENS.iter().any(|w| tl.contains(w)))
             || tl.starts_with("from:") && tl.contains("sent:")
     };
 
     let looks_like_header_bundle = |idx: usize| -> bool {
-        // Detect Outlook/Gmail-style inline headers in the body.
-        // From: ...
-        // Sent: ...
-        // To: ...
-        // Subject: ...
         let mut hits = 0usize;
         let end = (idx + 10).min(lines.len());
         for j in idx..end {
@@ -160,15 +280,8 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
             if t.is_empty() {
                 continue;
             }
-            let tl = t.to_ascii_lowercase();
-            if tl.starts_with("from:")
-                || tl.starts_with("sent:")
-                || tl.starts_with("date:")
-                || tl.starts_with("to:")
-                || tl.starts_with("cc:")
-                || tl.starts_with("subject:")
-                || tl.starts_with("message-id:")
-            {
+            let tl = line_core(t);
+            if starts_with_any(&tl, HEADER_KEYS) {
                 hits += 1;
             }
         }
@@ -200,7 +313,7 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
             if t.is_empty() {
                 continue;
             }
-            let tl = t.to_ascii_lowercase();
+            let tl = line_core(t);
             if let Some(rest) = tl.strip_prefix("subject:") {
                 if rest.trim_start().starts_with("fwd:") || rest.trim_start().starts_with("fw:") {
                     return EmailBlockKind::Forwarded;
@@ -232,7 +345,7 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
             break;
         }
 
-        let tl = t.to_ascii_lowercase();
+        let tl = line_core(t);
         if (tl.starts_with("from:") || tl.starts_with("sent:") || tl.starts_with("date:"))
             && looks_like_header_bundle(idx)
         {
@@ -254,22 +367,69 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
         }
     }
 
-    // Signature delimiter before quoted history.
+    // Signature/salutation/disclaimer detection.
     let mut signature_start: Option<usize> = None;
+    let mut disclaimer_start: Option<usize> = None;
+    let mut salutation_line: Option<(usize, usize)> = None;
     let quote_byte_start = quote_start.as_ref().map(|(s, _)| *s).unwrap_or(bytes.len());
+    let mut non_empty_before_quote = Vec::new();
     for (idx, (s, e)) in lines.iter().copied().enumerate() {
         if s >= quote_byte_start {
             break;
         }
         let t = get_line((s, e)).trim();
-        if t == "--" || t == "-- " {
-            // Only treat it as signature if it is near the end of the reply.
-            let remaining = lines.len().saturating_sub(idx);
-            if remaining <= 25 {
-                signature_start = Some(s);
-                break;
-            }
+        if !t.is_empty() {
+            non_empty_before_quote.push((idx, s, e));
         }
+    }
+
+    for (_idx, s, e) in non_empty_before_quote.iter().copied().take(6) {
+        let core = line_core(get_line((s, e)));
+        if SALUTATION_PREFIXES.iter().any(|p| {
+            core == *p || core.starts_with(&format!("{p} ")) || core.starts_with(&format!("{p},"))
+        }) {
+            salutation_line = Some((s, e));
+            break;
+        }
+    }
+
+    for (rev_pos, (_idx, s, e)) in non_empty_before_quote
+        .iter()
+        .copied()
+        .rev()
+        .take(20)
+        .enumerate()
+    {
+        let t = get_line((s, e)).trim();
+        let core = line_core(t);
+        if DISCLAIMER_CUES
+            .iter()
+            .any(|c| core.starts_with(c) || core.contains(c))
+        {
+            disclaimer_start = Some(s);
+        }
+        if t == "--" || t == "-- " {
+            signature_start = Some(s);
+            break;
+        }
+        if MOBILE_SIGNATURE_CUES.iter().any(|c| core.starts_with(c)) {
+            signature_start = Some(s);
+            break;
+        }
+        if SIGNATURE_CUES
+            .iter()
+            .any(|c| core == *c || core.starts_with(&format!("{c},")) || core.starts_with(c))
+            && rev_pos <= 12
+        {
+            signature_start = Some(s);
+            break;
+        }
+    }
+
+    if let (Some(sig), Some(dis)) = (signature_start, disclaimer_start)
+        && dis < sig
+    {
+        disclaimer_start = None;
     }
 
     let mut out = Vec::new();
@@ -278,24 +438,47 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
     let quoted_kind = quote_start.as_ref().map(|(_, k)| k.clone());
     let quote_byte_start = quote_start.as_ref().map(|(s, _)| *s);
 
-    let reply_end = signature_start.or(quote_byte_start).unwrap_or(body_end);
+    let reply_start = salutation_line.map(|(_, e)| e).unwrap_or(0);
+    let reply_end = signature_start
+        .or(disclaimer_start)
+        .or(quote_byte_start)
+        .unwrap_or(body_end)
+        .min(body_end);
 
-    let reply_end = reply_end.min(body_end);
-    if reply_end > 0 {
+    if let Some((s, e)) = salutation_line {
+        out.push(EmailBlock {
+            kind: EmailBlockKind::Salutation,
+            byte_start: s,
+            byte_end: e,
+        });
+    }
+
+    if reply_end > reply_start {
         out.push(EmailBlock {
             kind: EmailBlockKind::Reply,
-            byte_start: 0,
+            byte_start: reply_start,
             byte_end: reply_end,
         });
     }
 
     if let Some(sig_start) = signature_start {
-        let sig_end = quote_byte_start.unwrap_or(body_end);
+        let sig_end = disclaimer_start.unwrap_or(quote_byte_start.unwrap_or(body_end));
         if sig_end > sig_start {
             out.push(EmailBlock {
                 kind: EmailBlockKind::Signature,
                 byte_start: sig_start,
                 byte_end: sig_end,
+            });
+        }
+    }
+
+    if let Some(dis_start) = disclaimer_start {
+        let dis_end = quote_byte_start.unwrap_or(body_end);
+        if dis_end > dis_start {
+            out.push(EmailBlock {
+                kind: EmailBlockKind::Disclaimer,
+                byte_start: dis_start,
+                byte_end: dis_end,
             });
         }
     }

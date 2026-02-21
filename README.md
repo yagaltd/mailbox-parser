@@ -48,6 +48,7 @@ For a stable export/ingest format, you can convert `ParsedThread` → `Canonical
 
 - `CanonicalMessage.reply_text`: the top-level reply text (quoted history stripped)
 - `CanonicalMessage.quoted_blocks` / `forwarded_blocks` / `signature`: preserved separately
+- `CanonicalMessage.salutation` and `CanonicalMessage.disclaimer_blocks`: preserved when detected
 
 ```rust
 use mailbox_parser::{canonicalize_threads, thread_messages};
@@ -67,6 +68,18 @@ This canonical representation is what `mailbox-parser-cli --json-profile canonic
 4) `canonicalize_threads()` → `CanonicalThread`
 
 Export/render is done by `mailbox-parser-cli`. Ingest into the store is done by SDK crates (V3 pipeline adapters, and legacy V2 tooling where still needed).
+
+### Email body segmentation model
+
+`segment_email_body()` emits deterministic blocks from `body_canonical`:
+
+- `salutation` (optional)
+- `reply`
+- `signature` (optional)
+- `disclaimer` (optional)
+- `quoted` or `forwarded` (optional)
+
+Detection is line-based and includes multilingual quote/header cues plus tail-window signature/disclaimer heuristics.
 
 ### MBOX parsing
 

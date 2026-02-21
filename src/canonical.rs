@@ -37,6 +37,10 @@ pub struct CanonicalMessage {
     pub quoted_blocks: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub forwarded_blocks: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub disclaimer_blocks: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub salutation: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub signature: Option<String>,
 
@@ -89,6 +93,8 @@ fn canonicalize_email_message(
 
     let mut quoted_blocks = Vec::new();
     let mut forwarded_blocks = Vec::new();
+    let mut disclaimer_blocks = Vec::new();
+    let mut salutation = None;
     let mut signature = None;
 
     for b in &blocks {
@@ -105,6 +111,12 @@ fn canonicalize_email_message(
             EmailBlockKind::Signature => {
                 if signature.is_none() {
                     signature = Some(t.to_string());
+                }
+            }
+            EmailBlockKind::Disclaimer => disclaimer_blocks.push(t.to_string()),
+            EmailBlockKind::Salutation => {
+                if salutation.is_none() {
+                    salutation = Some(t.to_string());
                 }
             }
             EmailBlockKind::Reply => {}
@@ -145,6 +157,8 @@ fn canonicalize_email_message(
         reply_text: reply,
         quoted_blocks,
         forwarded_blocks,
+        disclaimer_blocks,
+        salutation,
         signature,
         attachments,
         forwarded_messages: email.forwarded_messages.clone(),

@@ -1,20 +1,23 @@
+mod canonical;
+mod email_text;
 mod imap;
 mod mbox;
-mod email_text;
-mod canonical;
 
+pub use canonical::{CanonicalAttachment, CanonicalMessage, CanonicalThread, canonicalize_threads};
+pub use email_text::{
+    EmailBlock, EmailBlockKind, forwarded_message_ids, normalize_email_text, reply_text,
+    segment_email_body,
+};
 pub use imap::{
     ImapAccountConfig, ImapConfigFile, ImapScanOptions, ImapStateBackend, ImapSyncOptions,
-    ImapSyncResult, ImapSyncState, SyncedEmail, scan_imap_headers,
-    scan_imap_headers_with_progress, sync_imap_delta, sync_imap_with_backend,
+    ImapSyncResult, ImapSyncState, SyncedEmail, scan_imap_headers, scan_imap_headers_with_progress,
+    sync_imap_delta, sync_imap_with_backend,
 };
 pub use mbox::{
     MboxMessage, MboxParseError, MboxParseOptions, MboxParseReport, MboxReadOptions,
     iter_mbox_messages, parse_mbox_file, scan_mbox_file_headers_only, scan_mbox_headers,
     scan_mbox_headers_with_progress,
 };
-pub use email_text::{EmailBlock, EmailBlockKind, forwarded_message_ids, normalize_email_text, reply_text, segment_email_body};
-pub use canonical::{CanonicalAttachment, CanonicalMessage, CanonicalThread, canonicalize_threads};
 
 use anyhow::{Result, anyhow};
 pub use contacts::EmailAddress;
@@ -242,7 +245,11 @@ pub fn normalize_message_id(s: &str) -> String {
         .to_ascii_lowercase()
 }
 
-pub fn thread_root_id(message_id: Option<&str>, in_reply_to: Option<&str>, references: &[String]) -> Option<String> {
+pub fn thread_root_id(
+    message_id: Option<&str>,
+    in_reply_to: Option<&str>,
+    references: &[String],
+) -> Option<String> {
     if let Some(first) = references.first() {
         if !first.trim().is_empty() {
             return Some(first.to_string());
@@ -388,7 +395,10 @@ pub fn thread_messages(messages: &[SyncedEmail]) -> Vec<ParsedThread> {
         .into_iter()
         .map(|(thread_id, mut messages)| {
             messages.sort_by(|a, b| message_sort_key(a).cmp(&message_sort_key(b)));
-            ParsedThread { thread_id, messages }
+            ParsedThread {
+                thread_id,
+                messages,
+            }
         })
         .collect();
 
@@ -448,7 +458,10 @@ pub fn thread_messages_from_mail_messages(messages: &[MailMessage]) -> Vec<Parse
         .into_iter()
         .map(|(thread_id, mut messages)| {
             messages.sort_by(|a, b| message_sort_key(a).cmp(&message_sort_key(b)));
-            ParsedThread { thread_id, messages }
+            ParsedThread {
+                thread_id,
+                messages,
+            }
         })
         .collect();
 
@@ -605,8 +618,7 @@ fn collect_attachments_and_forwards(
                 .unwrap_or_else(|| "application/octet-stream".to_string());
             let filename = att.attachment_name().map(|s| s.to_string());
             let content_id = att.content_id().map(|s| s.to_string());
-            let content_disposition =
-                att.content_disposition().map(|s| s.ctype().to_string());
+            let content_disposition = att.content_disposition().map(|s| s.ctype().to_string());
 
             attachments.push(ParsedAttachment {
                 filename,

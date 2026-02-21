@@ -113,7 +113,10 @@ pub struct ImapScanOptions {
     pub max_messages: Option<usize>,
 }
 
-pub fn scan_imap_headers(account: &ImapAccountConfig, options: ImapScanOptions) -> Result<MailboxScanReport> {
+pub fn scan_imap_headers(
+    account: &ImapAccountConfig,
+    options: ImapScanOptions,
+) -> Result<MailboxScanReport> {
     scan_imap_headers_inner(account, options, None)
 }
 
@@ -123,7 +126,11 @@ pub fn scan_imap_headers_with_progress<F: FnMut(usize, f64)>(
     progress_every: usize,
     mut on_progress: F,
 ) -> Result<MailboxScanReport> {
-    scan_imap_headers_inner(account, options, Some((&mut on_progress, progress_every.max(1))))
+    scan_imap_headers_inner(
+        account,
+        options,
+        Some((&mut on_progress, progress_every.max(1))),
+    )
 }
 
 fn scan_imap_headers_inner(
@@ -153,9 +160,7 @@ fn scan_imap_headers_inner(
         }
 
         let uid = fetch.uid.map(|v| v as u32);
-        let internal_date = fetch
-            .internal_date()
-            .map(|d| d.to_rfc3339());
+        let internal_date = fetch.internal_date().map(|d| d.to_rfc3339());
         let rfc822_size = fetch.size.map(|s| s as u32);
 
         let Some(header_bytes) = fetch.header() else {
@@ -534,4 +539,3 @@ fn now_ms() -> i64 {
         .unwrap_or_default()
         .as_millis() as i64
 }
-

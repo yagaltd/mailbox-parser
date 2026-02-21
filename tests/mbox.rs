@@ -13,8 +13,14 @@ fn parse_mbox_splits_messages_and_threads() {
     );
     assert!(report.errors.is_empty());
     assert_eq!(report.messages.len(), 2);
-    assert_eq!(report.messages[0].parsed.subject.as_deref(), Some("Hello Bob"));
-    assert_eq!(report.messages[1].parsed.in_reply_to.as_deref(), Some("msg-1@example.com"));
+    assert_eq!(
+        report.messages[0].parsed.subject.as_deref(),
+        Some("Hello Bob")
+    );
+    assert_eq!(
+        report.messages[1].parsed.in_reply_to.as_deref(),
+        Some("msg-1@example.com")
+    );
 
     let threads = thread_messages_from_mail_messages(&report.messages);
     assert_eq!(threads.len(), 1);
@@ -30,11 +36,7 @@ fn mboxrd_unescapes_from_lines_in_body() {
     assert!(report.errors.is_empty());
     assert_eq!(report.messages.len(), 1);
 
-    let body = report.messages[0]
-        .parsed
-        .body_text
-        .as_deref()
-        .unwrap_or("");
+    let body = report.messages[0].parsed.body_text.as_deref().unwrap_or("");
     assert!(body.contains("From escaped line"));
     assert!(body.contains(">From double escaped"));
 }
@@ -52,11 +54,7 @@ fn strict_mode_avoids_false_splits() {
     assert!(report.errors.is_empty());
     assert_eq!(report.messages.len(), 1);
 
-    let body = report.messages[0]
-        .parsed
-        .body_text
-        .as_deref()
-        .unwrap_or("");
+    let body = report.messages[0].parsed.body_text.as_deref().unwrap_or("");
     assert!(body.contains("From not a separator line"));
 }
 
@@ -71,6 +69,9 @@ fn mbox_attachments_survive_split_and_parse() {
 
     let msg = &report.messages[0];
     assert_eq!(msg.parsed.attachments.len(), 1);
-    assert_eq!(msg.parsed.attachments[0].filename.as_deref(), Some("notes.txt"));
+    assert_eq!(
+        msg.parsed.attachments[0].filename.as_deref(),
+        Some("notes.txt")
+    );
     assert!(msg.parsed.attachments[0].size > 0);
 }

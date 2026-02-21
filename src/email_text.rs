@@ -202,9 +202,7 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
             }
             let tl = t.to_ascii_lowercase();
             if let Some(rest) = tl.strip_prefix("subject:") {
-                if rest.trim_start().starts_with("fwd:")
-                    || rest.trim_start().starts_with("fw:")
-                {
+                if rest.trim_start().starts_with("fwd:") || rest.trim_start().starts_with("fw:") {
                     return EmailBlockKind::Forwarded;
                 }
                 break;
@@ -258,10 +256,7 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
 
     // Signature delimiter before quoted history.
     let mut signature_start: Option<usize> = None;
-    let quote_byte_start = quote_start
-        .as_ref()
-        .map(|(s, _)| *s)
-        .unwrap_or(bytes.len());
+    let quote_byte_start = quote_start.as_ref().map(|(s, _)| *s).unwrap_or(bytes.len());
     for (idx, (s, e)) in lines.iter().copied().enumerate() {
         if s >= quote_byte_start {
             break;
@@ -283,9 +278,7 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
     let quoted_kind = quote_start.as_ref().map(|(_, k)| k.clone());
     let quote_byte_start = quote_start.as_ref().map(|(s, _)| *s);
 
-    let reply_end = signature_start
-        .or(quote_byte_start)
-        .unwrap_or(body_end);
+    let reply_end = signature_start.or(quote_byte_start).unwrap_or(body_end);
 
     let reply_end = reply_end.min(body_end);
     if reply_end > 0 {

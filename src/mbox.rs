@@ -134,10 +134,17 @@ pub fn scan_mbox_headers_with_progress<F: FnMut(usize, f64)>(
     progress_every: usize,
     mut on_progress: F,
 ) -> Result<MailboxScanReport> {
-    scan_mbox_headers_inner(path, options, Some((&mut on_progress, progress_every.max(1))))
+    scan_mbox_headers_inner(
+        path,
+        options,
+        Some((&mut on_progress, progress_every.max(1))),
+    )
 }
 
-pub fn scan_mbox_file_headers_only(path: &Path, options: MboxReadOptions) -> Result<MailboxScanReport> {
+pub fn scan_mbox_file_headers_only(
+    path: &Path,
+    options: MboxReadOptions,
+) -> Result<MailboxScanReport> {
     scan_mbox_headers(path, options)
 }
 

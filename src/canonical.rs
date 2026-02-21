@@ -68,11 +68,7 @@ pub fn canonicalize_threads(threads: &[ParsedThread]) -> Vec<CanonicalThread> {
         .iter()
         .map(|t| CanonicalThread {
             thread_id: t.thread_id.clone(),
-            messages: t
-                .messages
-                .iter()
-                .map(canonicalize_thread_message)
-                .collect(),
+            messages: t.messages.iter().map(canonicalize_thread_message).collect(),
         })
         .collect()
 }

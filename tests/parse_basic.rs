@@ -26,7 +26,10 @@ fn parse_forward_and_attachment() {
     let parsed = parse_rfc822(&bytes).expect("parse");
 
     assert_eq!(parsed.forwarded_messages.len(), 1);
-    assert_eq!(parsed.forwarded_messages[0].message_id.as_deref(), Some("inner-1@example.com"));
+    assert_eq!(
+        parsed.forwarded_messages[0].message_id.as_deref(),
+        Some("inner-1@example.com")
+    );
     assert_eq!(parsed.attachments.len(), 1);
     assert_eq!(parsed.attachments[0].filename.as_deref(), Some("notes.txt"));
     assert_eq!(parsed.attachments[0].size, 16);
@@ -112,10 +115,12 @@ fn parse_inline_forwarded_message_id_from_body() {
     let bytes = fixture("tests/fixtures/inline_forward_body.eml");
     let parsed = parse_rfc822(&bytes).expect("parse");
 
-    assert!(parsed
-        .forwarded_messages
-        .iter()
-        .any(|f| f.message_id.as_deref() == Some("inner-forward-123@example.com")));
+    assert!(
+        parsed
+            .forwarded_messages
+            .iter()
+            .any(|f| f.message_id.as_deref() == Some("inner-forward-123@example.com"))
+    );
 }
 
 #[test]

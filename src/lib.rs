@@ -1226,9 +1226,36 @@ fn extract_event_hints(subject: Option<&str>, reply_text: &str) -> Vec<ParsedEve
     let mut timezone_candidates = Vec::new();
 
     let month_tokens = [
-        "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+        "jan",
+        "january",
+        "feb",
+        "february",
+        "mar",
+        "march",
+        "apr",
+        "april",
+        "may",
+        "jun",
+        "june",
+        "jul",
+        "july",
+        "aug",
+        "august",
+        "sep",
+        "sept",
+        "september",
+        "oct",
+        "october",
+        "nov",
+        "november",
+        "dec",
+        "december",
     ];
-    let tz_tokens = ["utc", "gmt", "cet", "cest", "pst", "est"];
+    let weekday_tokens = ["mon", "monday", "tue", "tuesday", "wed", "wednesday", "thu", "thursday", "fri", "friday", "sat", "saturday", "sun", "sunday"];
+    let tz_tokens = [
+        "utc", "gmt", "cet", "cest", "pst", "pdt", "est", "edt", "bst", "cst", "cdt", "mst",
+        "mdt",
+    ];
     let meeting_hosts = [
         "zoom.us",
         "meet.google.com",
@@ -1236,7 +1263,136 @@ fn extract_event_hints(subject: Option<&str>, reply_text: &str) -> Vec<ParsedEve
         "webex.com",
         "calendly.com",
     ];
-    let location_tokens = ["avenue", "street", "road", "site", "venue", "office", "room"];
+    let location_tokens = [
+        "avenue",
+        "street",
+        "road",
+        "site",
+        "venue",
+        "office",
+        "room",
+        "unit",
+        "building",
+        "campus",
+    ];
+    let clean_token = |raw: &str| -> String {
+        raw.trim_matches(move |c: char| {
+            c.is_whitespace()
+                || matches!(
+                    c,
+                    ',' | ';' | '.' | ':' | '(' | ')' | '[' | ']' | '<' | '>' | '"' | '\''
+                )
+        })
+        .to_string()
+    };
+    let is_time_like = |line: &str| -> bool {
+        line.split_whitespace().any(|tok| {
+            let t = clean_token(tok);
+            let Some((h, m)) = t.as_str().split_once(':') else {
+                return false;
+            };
+            if h.is_empty() || m.is_empty() {
+                return false;
+            }
+            let m2: String = m.chars().take_while(|c| c.is_ascii_digit()).collect();
+            h.chars().all(|c| c.is_ascii_digit())
+                && m2.len() >= 2
+                && m2.chars().all(|c| c.is_ascii_digit())
+        })
+    };
+    let is_numeric_date_token = |token: &str| -> bool {
+        let t = clean_token(token);
+        for sep in ['-', '/'] {
+            let parts: Vec<&str> = t.as_str().split(sep).collect();
+            if parts.len() != 3 {
+                continue;
+            }
+            if !parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit())) {
+                continue;
+            }
+            let lens: Vec<usize> = parts.iter().map(|p| p.len()).collect();
+            let has_year = lens.contains(&4);
+            if !has_year {
+                continue;
+            }
+            let year = parts
+                .iter()
+                .find(|p| p.len() == 4)
+                .and_then(|y| y.parse::<u32>().ok())
+                .unwrap_or(0);
+            if !(1900..=2100).contains(&year) {
+                continue;
+            }
+            return true;
+        }
+        false
+    };
+    let has_month_and_day = |line: &str| -> bool {
+        let lower = line.to_ascii_lowercase();
+        if !month_tokens.iter().any(|m| lower.contains(m)) {
+            return false;
+        }
+        lower
+            .split_whitespace()
+            .map(clean_token)
+            .any(|tok| tok.chars().all(|c| c.is_ascii_digit()) && (1..=2).contains(&tok.len()))
+    };
+    let has_month_range = |line: &str| -> bool {
+        let lower = line.to_ascii_lowercase();
+        if !month_tokens.iter().any(|m| lower.contains(m)) {
+            return false;
+        }
+        lower.split_whitespace().any(|tok| {
+            let t = clean_token(tok);
+            let Some((a, b)) = t.as_str().split_once('-') else {
+                return false;
+            };
+            !a.is_empty()
+                && !b.is_empty()
+                && a.chars().all(|c| c.is_ascii_digit())
+                && b.chars().all(|c| c.is_ascii_digit())
+                && (1..=2).contains(&a.len())
+                && (1..=2).contains(&b.len())
+        })
+    };
+    let has_weekday_and_date = |line: &str| -> bool {
+        let lower = line.to_ascii_lowercase();
+        weekday_tokens.iter().any(|d| lower.contains(d))
+            && (line.split_whitespace().any(is_numeric_date_token) || has_month_and_day(line))
+    };
+    let has_strong_date_anchor = |line: &str| -> bool {
+        line.split_whitespace().any(is_numeric_date_token)
+            || has_month_and_day(line)
+            || has_month_range(line)
+            || has_weekday_and_date(line)
+    };
+    let extract_meeting_link = |line: &str| -> Option<String> {
+        for tok in line.split_whitespace() {
+            let t = clean_token(tok);
+            if !(t.starts_with("http://") || t.starts_with("https://")) {
+                continue;
+            }
+            let lower = t.to_ascii_lowercase();
+            if meeting_hosts.iter().any(|h| lower.contains(h)) {
+                return Some(t);
+            }
+        }
+        None
+    };
+    let has_strict_timezone = |line: &str| -> bool {
+        let lower = line.to_ascii_lowercase();
+        if lower.contains("utc+") || lower.contains("utc-") || lower.contains("gmt+") || lower.contains("gmt-") {
+            return true;
+        }
+        line.split_whitespace().any(|tok| {
+            let t = clean_token(tok);
+            if t.is_empty() {
+                return false;
+            }
+            let upper = t.to_ascii_uppercase();
+            tz_tokens.iter().any(|z| upper == z.to_ascii_uppercase())
+        })
+    };
 
     for line in text.lines() {
         let l = line.trim();
@@ -1244,39 +1400,30 @@ fn extract_event_hints(subject: Option<&str>, reply_text: &str) -> Vec<ParsedEve
             continue;
         }
         let lower = l.to_ascii_lowercase();
-        let has_date_shape = lower.contains("20")
-            && (lower.contains('-') || lower.contains('/'))
-            && l.chars().any(|c| c.is_ascii_digit());
-        let has_month_word = month_tokens.iter().any(|m| lower.contains(m))
-            && l.chars().any(|c| c.is_ascii_digit());
-        let has_range = lower.contains(" - ") || lower.contains(" to ");
-        let has_time = lower.contains(':') && l.chars().any(|c| c.is_ascii_digit());
-        if has_date_shape || has_month_word || has_range {
+        let has_time = is_time_like(l);
+        if has_strong_date_anchor(l) {
             datetime_candidates.push(ParsedDateTimeCandidate {
                 raw: l.to_string(),
                 has_time,
             });
         }
-        if tz_tokens.iter().any(|t| lower.contains(t))
-            || lower.contains("utc+")
-            || lower.contains("gmt+")
-            || lower.contains("utc-")
-            || lower.contains("gmt-")
-        {
+        if has_strict_timezone(l) {
             timezone_candidates.push(l.to_string());
         }
-        if meeting_hosts.iter().any(|h| lower.contains(h))
-            || lower.contains("zoom")
-            || lower.contains("teams")
-            || lower.contains("meeting link")
-        {
-            meeting_links.push(l.to_string());
+        if let Some(link) = extract_meeting_link(l) {
+            if !meeting_links.iter().any(|m| m == &link) {
+                meeting_links.push(link);
+            }
         }
         if location_tokens.iter().any(|t| lower.contains(t))
             || (l.chars().filter(|c| c.is_ascii_digit()).count() >= 4 && lower.contains("france"))
         {
             location_candidates.push(l.to_string());
         }
+    }
+
+    if datetime_candidates.is_empty() {
+        return Vec::new();
     }
 
     let kind_source = format!(
@@ -1298,14 +1445,6 @@ fn extract_event_hints(subject: Option<&str>, reply_text: &str) -> Vec<ParsedEve
     } else {
         EventHintKind::Generic
     };
-
-    if datetime_candidates.is_empty()
-        && meeting_links.is_empty()
-        && location_candidates.is_empty()
-        && timezone_candidates.is_empty()
-    {
-        return Vec::new();
-    }
 
     let has_time = datetime_candidates.iter().any(|c| c.has_time);
     let has_date = !datetime_candidates.is_empty();

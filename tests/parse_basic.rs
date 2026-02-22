@@ -325,3 +325,58 @@ fn parse_event_hints_detect_complete_meeting() {
     assert!(event.is_complete);
     assert!(event.missing_fields.is_empty());
 }
+
+#[test]
+fn parse_signature_moves_kind_regards_out_of_reply_before_dash_separator() {
+    let text = "We have conducted a training session.\nKind regards\n--\nNicolas Guillou\nCEO\nnicolas@example.com";
+    let blocks = segment_email_body(text);
+    assert!(blocks.iter().any(|b| b.kind == EmailBlockKind::Signature));
+    let reply = reply_text(text, &blocks);
+    assert_eq!(reply, "We have conducted a training session.");
+}
+
+#[test]
+fn parse_signature_detects_long_tail_contact_card() {
+    let text = "Thanks for the update.\n\nBest regards,\nParsa\nAlways here to help,\n[image]\nParsa Zali\nInstrumentation Technician- Shop & Logistics\nMobile +1 905 699-9703\nEmail parsa@currentinstrument.com\nwww.currentinstrument.com\nCurrent Instrumentation & Automation Inc.\n680 Tradewind Dr., Unit 11, Hamilton, ON, Canada L9G 4V5";
+    let blocks = segment_email_body(text);
+    assert!(blocks.iter().any(|b| b.kind == EmailBlockKind::Signature));
+    let reply = reply_text(text, &blocks);
+    assert_eq!(reply, "Thanks for the update.");
+}
+
+#[test]
+fn parse_event_hints_ignores_plain_teams_word_without_meeting_url() {
+    let msg = concat!(
+        "From: Alice <alice@example.com>\n",
+        "To: Bob <bob@example.com>\n",
+        "Subject: Questions related to Sensa devices\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "few questions came in from the BSP technical teams.\n",
+        "We need official feedback from vendor.\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert!(parsed.event_hints.is_empty());
+}
+
+#[test]
+fn parse_event_hints_detects_date_range_with_month() {
+    let msg = concat!(
+        "From: Alice <alice@example.com>\n",
+        "To: Bob <bob@example.com>\n",
+        "Subject: Site visit planning\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Does 16-18 April or 23-25 April work for you?\n",
+        "We can meet on site in Athens.\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert_eq!(parsed.event_hints.len(), 1);
+    let event = &parsed.event_hints[0];
+    assert!(
+        event
+            .datetime_candidates
+            .iter()
+            .any(|d| d.raw.contains("16-18 April"))
+    );
+}

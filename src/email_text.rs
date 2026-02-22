@@ -156,6 +156,110 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
         out
     };
     let line_core_header = |line: &str| normalize_space_before_colon(&line_core(line));
+    let has_email_like = |line: &str| {
+        line.split_whitespace().any(|tok| {
+            let t = tok.trim_matches(|c: char| ",;:.()<>[]\"'".contains(c));
+            let Some((_, domain)) = t.split_once('@') else {
+                return false;
+            };
+            !domain.is_empty() && domain.contains('.')
+        })
+    };
+    let has_url_like = |line: &str| {
+        let lower = line.to_ascii_lowercase();
+        lower.contains("http://") || lower.contains("https://") || lower.contains("www.")
+    };
+    let has_phone_like = |line: &str| {
+        let digits = line.chars().filter(|c| c.is_ascii_digit()).count();
+        digits >= 8 && (line.contains('+') || line.contains('-') || line.contains(' '))
+    };
+    let has_cid_or_image_marker = |line: &str| {
+        let lower = line.to_ascii_lowercase();
+        lower.contains("cid:") || lower.contains("[image") || lower.contains("logo")
+    };
+    let has_address_marker = |line: &str| {
+        let lower = line.to_ascii_lowercase();
+        [
+            "avenue",
+            "street",
+            "road",
+            "blvd",
+            "boulevard",
+            "unit ",
+            "p.o.box",
+            "po box",
+            "city",
+            "france",
+            "germany",
+            "canada",
+            "ksa",
+            "usa",
+        ]
+        .iter()
+        .any(|t| lower.contains(t))
+    };
+    let has_org_or_title_marker = |line: &str| {
+        let lower = line.to_ascii_lowercase();
+        [
+            "inc",
+            "llc",
+            "gmbh",
+            "sas",
+            "ltd",
+            "company",
+            "manager",
+            "director",
+            "engineer",
+            "technician",
+            "support",
+        ]
+        .iter()
+        .any(|t| lower.contains(t))
+    };
+    let looks_like_name_line = |line: &str| {
+        let t = line.trim();
+        if t.is_empty() || t.len() > 60 {
+            return false;
+        }
+        let words: Vec<&str> = t.split_whitespace().collect();
+        if words.is_empty() || words.len() > 4 {
+            return false;
+        }
+        if words.len() == 1 {
+            let w = words[0].trim_matches(|c: char| ",.;:()<>[]\"'".contains(c));
+            return w.len() >= 2
+                && w.chars().all(|c| c.is_ascii_alphabetic() || c == '-' || c == '\'')
+                && w.chars().next().map(|c| c.is_ascii_uppercase()).unwrap_or(false);
+        }
+        words.iter().all(|w| {
+            let w = w.trim_matches(|c: char| ",.;:()<>[]\"'".contains(c));
+            !w.is_empty()
+                && w.chars().all(|c| c.is_ascii_alphabetic() || c == '-' || c == '\'')
+                && w.chars().next().map(|c| c.is_ascii_uppercase()).unwrap_or(false)
+        })
+    };
+    let signature_contact_score = |line: &str| -> usize {
+        let mut score = 0usize;
+        if has_email_like(line) {
+            score += 2;
+        }
+        if has_phone_like(line) {
+            score += 2;
+        }
+        if has_url_like(line) {
+            score += 2;
+        }
+        if has_cid_or_image_marker(line) {
+            score += 2;
+        }
+        if has_address_marker(line) {
+            score += 1;
+        }
+        if has_org_or_title_marker(line) {
+            score += 1;
+        }
+        score
+    };
 
     let starts_with_any =
         |s: &str, patterns: &[&str]| -> bool { patterns.iter().any(|p| s.starts_with(p)) };
@@ -418,13 +522,26 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
         }
     }
 
-    for (rev_pos, (_idx, s, e)) in non_empty_before_quote
-        .iter()
-        .copied()
-        .rev()
-        .take(20)
-        .enumerate()
-    {
+    let tail_scan_take = non_empty_before_quote.len().min(60);
+    let tail_start_idx = non_empty_before_quote.len().saturating_sub(tail_scan_take);
+    let is_signature_cue_line = |core: &str| {
+        SIGNATURE_CUES.iter().any(|c| {
+            if *c == "thanks" {
+                return core == "thanks"
+                    || core == "thanks,"
+                    || core == "thanks."
+                    || core == "thanks!";
+            }
+            core == *c
+                || core.starts_with(&format!("{c},"))
+                || core.starts_with(&format!("{c}."))
+                || core.starts_with(c)
+        })
+    };
+    let mut signature_pos: Option<usize> = None;
+
+    for pos in (tail_start_idx..non_empty_before_quote.len()).rev() {
+        let (_idx, s, e) = non_empty_before_quote[pos];
         let t = get_line((s, e)).trim();
         let core = line_core(t);
         if DISCLAIMER_CUES
@@ -434,21 +551,74 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
             disclaimer_start = Some(s);
         }
         if t == "--" || t == "-- " {
-            signature_start = Some(s);
+            signature_pos = Some(pos);
             break;
         }
         if MOBILE_SIGNATURE_CUES.iter().any(|c| core.starts_with(c)) {
-            signature_start = Some(s);
+            signature_pos = Some(pos);
             break;
         }
-        if SIGNATURE_CUES
-            .iter()
-            .any(|c| core == *c || core.starts_with(&format!("{c},")) || core.starts_with(c))
-            && rev_pos <= 12
-        {
-            signature_start = Some(s);
+        if is_signature_cue_line(&core) {
+            let mut tail_score = 0usize;
+            let mut next_has_name = false;
+            let end = (pos + 13).min(non_empty_before_quote.len());
+            for next in (pos + 1)..end {
+                let (_j, ns, ne) = non_empty_before_quote[next];
+                let nt = get_line((ns, ne)).trim();
+                if nt.is_empty() {
+                    continue;
+                }
+                tail_score += signature_contact_score(nt);
+                if next <= pos + 2 && looks_like_name_line(nt) {
+                    next_has_name = true;
+                }
+            }
+            if tail_score >= 2 || next_has_name {
+                signature_pos = Some(pos);
+                break;
+            }
+        }
+    }
+
+    if signature_pos.is_none() {
+        // Fallback: detect contact-card tails without explicit sign-off cue.
+        let mut block_start_pos: Option<usize> = None;
+        let mut block_score = 0usize;
+        let mut block_lines = 0usize;
+        for pos in (tail_start_idx..non_empty_before_quote.len()).rev() {
+            let (_idx, s, e) = non_empty_before_quote[pos];
+            let t = get_line((s, e)).trim();
+            let core = line_core(t);
+            let score = signature_contact_score(t);
+            let supportive = score > 0 || looks_like_name_line(t) || is_signature_cue_line(&core);
+            if supportive {
+                block_start_pos = Some(pos);
+                block_score += score;
+                block_lines += 1;
+                continue;
+            }
+            if block_start_pos.is_some() {
+                break;
+            }
+        }
+        if block_score >= 3 && block_lines >= 3 {
+            signature_pos = block_start_pos;
+        }
+    }
+
+    if let Some(mut pos) = signature_pos {
+        // Pull signature start upward for sign-off/name lines immediately above explicit markers.
+        while pos > 0 {
+            let (_pidx, ps, pe) = non_empty_before_quote[pos - 1];
+            let prev = get_line((ps, pe)).trim();
+            let prev_core = line_core(prev);
+            if is_signature_cue_line(&prev_core) || looks_like_name_line(prev) {
+                pos -= 1;
+                continue;
+            }
             break;
         }
+        signature_start = Some(non_empty_before_quote[pos].1);
     }
 
     if let (Some(sig), Some(dis)) = (signature_start, disclaimer_start)

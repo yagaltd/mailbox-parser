@@ -85,13 +85,22 @@ Export/render is done by `mailbox-parser-cli`. Ingest into the store is done by 
 - `disclaimer` (optional)
 - `quoted` or `forwarded` (optional)
 
-Detection is line-based and includes multilingual quote/header cues plus tail-window signature/disclaimer heuristics.
+Detection is line-based and includes multilingual quote/header cues plus adaptive signature/disclaimer heuristics.
 
 Notable heuristics:
 
 - Outlook-style header bundles are recognized across multiple locales (for example `From:/Sent:/...`, `Von:/Gesendet:/...`, `De :/Envoyé :/...`).
 - Dashed quote separators like `---- on ... wrote ----` are treated as quoted-history boundaries.
 - Mixed-language sign-offs like `Freundliche Grüße / Best regards` and short forms like `Rgds` are treated as signature cues.
+- Signature extraction now uses contact-card signals (email/phone/url/cid/address lines) so long corporate signatures are still split correctly even when the sign-off is far from the end of the message.
+
+### Event hint model
+
+`event_hints` are intentionally precision-first:
+
+- A hint is emitted only when a strong date anchor is detected (`YYYY-MM-DD`, numeric date, month+day, weekday+date, or month date ranges like `16-18 April`).
+- Meeting links are detected from URL host allowlists (for example `zoom.us`, `meet.google.com`, `teams.microsoft.com`) rather than generic words.
+- Timezones require explicit tokens/offsets (`UTC+`, `GMT-`, `CET`, etc.), avoiding substring false positives.
 
 ### V3 email ingest/chunking flow
 

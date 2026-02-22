@@ -894,3 +894,18 @@ fn forwarded_segment_strips_embedded_header_bundle_from_reply_text_regression() 
     assert!(!seg.reply_text.contains("Sent: Monday"));
     assert!(!seg.reply_text.contains("Subject: previous"));
 }
+
+#[test]
+fn signature_keeps_plain_sentence_before_best_regards_in_reply() {
+    let text = "I have a temperature sensor and I would like to disable Bluetooth.\n\nTherefore, I kindly ask you to provide me with guidance as soon as possible\nso I can solve this issue.\n\nBest regards,";
+    let blocks = segment_email_body(text);
+    let reply = reply_text(text, &blocks);
+    assert!(reply.contains("so I can solve this issue."));
+    assert!(!reply.contains("Best regards,"));
+    let sig = blocks
+        .iter()
+        .find(|b| b.kind == EmailBlockKind::Signature)
+        .and_then(|b| text.get(b.byte_start..b.byte_end))
+        .unwrap_or("");
+    assert_eq!(sig.trim(), "Best regards,");
+}

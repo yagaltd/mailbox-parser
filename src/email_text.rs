@@ -270,7 +270,13 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
         }
         let upper_words = words
             .iter()
-            .filter(|w| w.chars().all(|c| c.is_ascii_uppercase() || c == '&' || c == '-' || c == '/'))
+            .filter(|w| {
+                let token = w.trim_matches(|c: char| ",.;:()<>[]\"'".contains(c));
+                token.len() >= 2
+                    && token
+                        .chars()
+                        .all(|c| c.is_ascii_uppercase() || c == '&' || c == '-' || c == '/')
+            })
             .count();
         if upper_words >= 1 {
             return true;
@@ -849,6 +855,50 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
     }
 
     if let Some(mut pos) = signature_pos {
+        // Guard: keep plain request/prose lines in reply text when they sit just before a sign-off.
+        while pos + 1 < non_empty_before_quote.len() {
+            let (_idx, s, e) = non_empty_before_quote[pos];
+            let cur = get_line((s, e)).trim();
+            let cur_core = line_core(cur);
+            let cur_is_plain_body = !cur_core.is_empty()
+                && !is_signature_cue_line(&cur_core)
+                && !looks_like_name_line(cur)
+                && !looks_like_title_only_line(cur)
+                && !has_soft_contact_marker(cur)
+                && !has_strong_contact_marker(cur)
+                && cur.split_whitespace().count() >= 4
+                && (cur.ends_with('.') || cur.ends_with('!') || cur.ends_with('?'));
+            if !cur_is_plain_body {
+                break;
+            }
+            let look_end = (pos + 4).min(non_empty_before_quote.len());
+            let mut shifted = false;
+            for next_pos in (pos + 1)..look_end {
+                let (_nidx, ns, ne) = non_empty_before_quote[next_pos];
+                let next = get_line((ns, ne)).trim();
+                let next_core = line_core(next);
+                if !is_signature_cue_line(&next_core) {
+                    let next_is_plain = !looks_like_name_line(next)
+                        && !looks_like_title_only_line(next)
+                        && !has_soft_contact_marker(next)
+                        && !has_strong_contact_marker(next);
+                    if !next_is_plain {
+                        break;
+                    }
+                    continue;
+                }
+                if blank_gap_before_pos(next_pos) >= 1 {
+                    pos = next_pos;
+                    shifted = true;
+                }
+                break;
+            }
+            if shifted {
+                continue;
+            }
+            break;
+        }
+
         // Pull signature start upward for sign-off/name lines immediately above explicit markers.
         while pos > 0 {
             let (_pidx, ps, pe) = non_empty_before_quote[pos - 1];

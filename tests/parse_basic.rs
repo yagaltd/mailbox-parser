@@ -759,6 +759,17 @@ fn parse_signature_detects_bien_cordialement_variant() {
 }
 
 #[test]
+fn parse_signature_prefers_explicit_signoff_over_late_contact_tail() {
+    let text = "We confirm device Dev EUI is 1CA8520000004734.\n\nPlease see how to address it.\n\nBest regards,\nZakaria Syed\nI&C Dept-Manager\nAl Barakat Golden General Trading & Contracting Co.\n\n---- older chain ----\nMobile: 94468437\nEmail: s.zakaria@barkaat-golden.com\nwww.barkaat-golden.com";
+    let blocks = segment_email_body(text);
+    assert!(blocks.iter().any(|b| b.kind == EmailBlockKind::Signature));
+    let reply = reply_text(text, &blocks);
+    assert!(reply.contains("Please see how to address it."));
+    assert!(!reply.contains("Best regards"));
+    assert!(!reply.contains("barkaat-golden.com"));
+}
+
+#[test]
 fn parse_event_hints_ignores_plain_teams_word_without_meeting_url() {
     let msg = concat!(
         "From: Alice <alice@example.com>\n",

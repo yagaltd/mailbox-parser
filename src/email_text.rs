@@ -586,6 +586,7 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
         })
     };
     let mut signature_pos: Option<usize> = None;
+    let mut fallback_signature_pos: Option<usize> = None;
 
     let has_strong_contact_marker = |line: &str| has_email_like(line) || has_phone_like(line) || has_url_like(line);
     let has_soft_contact_marker =
@@ -679,10 +680,16 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
 
         let explicit_signoff_candidate = is_signature_cue_line(&core)
             && (next_has_name || has_contact_marker || blank_gap_before_pos(pos) >= 2);
-        if explicit_signoff_candidate || (score >= 4 && strong_evidence) {
+        if explicit_signoff_candidate {
             signature_pos = Some(pos);
             break;
         }
+        if score >= 4 && strong_evidence && fallback_signature_pos.is_none() {
+            fallback_signature_pos = Some(pos);
+        }
+    }
+    if signature_pos.is_none() {
+        signature_pos = fallback_signature_pos;
     }
 
     if signature_pos.is_none() {

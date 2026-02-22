@@ -189,6 +189,142 @@ fn parse_forwarded_segment_recurses_nested_forward() {
 }
 
 #[test]
+fn parse_forwarded_segment_unfolds_cc_and_strips_embedded_header_bundle() {
+    let msg = concat!(
+        "From: Alice <alice@example.com>\n",
+        "To: Bob <bob@example.com>\n",
+        "Subject: Fwd: Device question\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "FYI\n\n",
+        "---------- Forwarded message ---------\n",
+        "From: Haji Yakob <mohd-khiari.yakob@bsp-shell.bn>\n",
+        "Date: Wed, Oct 15, 2025 at 8:55 AM\n",
+        "Subject: RE: Sensa.io max pressure\n",
+        "To: Nicolas Guillou <nicolas.guillou@anian.co>\n",
+        "Cc: Lester Teo <lester.teo@anian.co>, Atiqah Fauzi <atiqah.fauzi@anian.co>,\n",
+        "Aktas, Ahmet Ufuk <ahmet.aktas@bsp-shell.bn>\n",
+        "\n",
+        "Nicolas,\n\n",
+        "Many thanks for responding to this query.\n\n",
+        "Regards,\n",
+        "Khiari\n\n",
+        "*From:* Nicolas Guillou <nicolas.guillou@anian.co>\n",
+        "*Sent:* Wednesday, October 15, 2025 8:46 AM\n",
+        "*To:* Wong <wong@bsp-shell.bn>\n",
+        "*Cc:* Lester Teo <lester.teo@anian.co>; Atiqah Fauzi <atiqah.fauzi@anian.co>\n",
+        "*Subject:* Sensa.io max pressure\n",
+        "\n",
+        "Hello,\n",
+        "Quoted body.\n",
+    );
+
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert_eq!(parsed.forwarded_segments.len(), 1);
+    let seg = &parsed.forwarded_segments[0];
+    assert!(
+        seg.headers
+            .cc
+            .iter()
+            .any(|a| a.address == "lester.teo@anian.co")
+    );
+    assert!(
+        seg.headers
+            .cc
+            .iter()
+            .any(|a| a.address == "atiqah.fauzi@anian.co")
+    );
+    assert!(
+        seg.headers
+            .cc
+            .iter()
+            .any(|a| a.address == "ahmet.aktas@bsp-shell.bn")
+    );
+    assert!(!seg.reply_text.contains("*From:*"));
+    assert!(!seg.reply_text.contains("*Sent:*"));
+    assert!(seg.quoted_blocks.iter().any(|b| b.contains("*From:*")));
+}
+
+#[test]
+fn parse_forwarded_headers_matrix_current_languages() {
+    let cases = [
+        (
+            "From",
+            "To",
+            "Date",
+            "Subject",
+            "From: Alice <alice@example.com>\nTo: Bob <bob@example.com>\nDate: Tue, 20 Jan 2026 12:34:56 +0000\nSubject: Test EN",
+        ),
+        (
+            "De",
+            "A",
+            "Envoyé",
+            "Objet",
+            "De: Alice <alice@example.com>\nA: Bob <bob@example.com>\nEnvoyé: mardi 20 janvier 2026 12:34\nObjet: Test FR",
+        ),
+        (
+            "De",
+            "Para",
+            "Enviado el",
+            "Asunto",
+            "De: Alice <alice@example.com>\nPara: Bob <bob@example.com>\nEnviado el: martes 20 enero 2026 12:34\nAsunto: Test ES",
+        ),
+        (
+            "Von",
+            "An",
+            "Gesendet",
+            "Betreff",
+            "Von: Alice <alice@example.com>\nAn: Bob <bob@example.com>\nGesendet: Dienstag, 20 Januar 2026 12:34\nBetreff: Test DE",
+        ),
+        (
+            "Da",
+            "A",
+            "Inviato",
+            "Oggetto",
+            "Da: Alice <alice@example.com>\nA: Bob <bob@example.com>\nInviato: martedi 20 gennaio 2026 12:34\nOggetto: Test IT",
+        ),
+        (
+            "Van",
+            "Aan",
+            "Verzonden",
+            "Onderwerp",
+            "Van: Alice <alice@example.com>\nAan: Bob <bob@example.com>\nVerzonden: dinsdag 20 januari 2026 12:34\nOnderwerp: Test NL",
+        ),
+        (
+            "Od",
+            "Do",
+            "Wysłano",
+            "Temat",
+            "Od: Alice <alice@example.com>\nDo: Bob <bob@example.com>\nWysłano: wtorek 20 stycznia 2026 12:34\nTemat: Test PL",
+        ),
+    ];
+
+    for (from_key, to_key, date_key, subject_key, headers) in cases {
+        let msg = format!(
+            "From: Top <top@example.com>\nTo: Root <root@example.com>\nSubject: Fwd case\nContent-Type: text/plain; charset=utf-8\n\n---- Forwarded message ----\n{headers}\n\nBody line.\n\n*From:* Legacy <legacy@example.com>\n*Sent:* Tue\n*To:* Root <root@example.com>\n*Subject:* Legacy Subject\n\nQuoted line.\n"
+        );
+        let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+        assert_eq!(parsed.forwarded_segments.len(), 1);
+        let seg = &parsed.forwarded_segments[0];
+        assert!(
+            seg.headers
+                .from
+                .iter()
+                .any(|a| a.address == "alice@example.com"),
+            "missing from for language keys {from_key}/{to_key}/{date_key}/{subject_key}"
+        );
+        assert!(
+            seg.headers.to.iter().any(|a| a.address == "bob@example.com"),
+            "missing to for language keys {from_key}/{to_key}/{date_key}/{subject_key}"
+        );
+        assert!(seg.headers.date.is_some(), "missing date for {date_key}");
+        assert!(seg.headers.subject.is_some(), "missing subject for {subject_key}");
+        assert!(!seg.reply_text.contains("*From:*"));
+        assert!(!seg.reply_text.contains("*Sent:*"));
+    }
+}
+
+#[test]
 fn normalize_email_text_strips_common_unicode_junk() {
     let msg = "Subject: Hi\nFrom: A <a@x>\nTo: B <b@x>\nDate: Tue, 20 Jan 2026 12:34:56 +0000\nContent-Type: text/plain; charset=utf-8\n\nHello\u{034F}\u{200C}\u{2007}\u{FEFF}\u{00A0}World\n";
     let parsed = parse_rfc822(msg.as_bytes()).expect("parse");

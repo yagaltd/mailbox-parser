@@ -1105,61 +1105,194 @@ fn parse_forwarded_headers(raw_block: &str) -> (ParsedForwardedHeaders, usize) {
         return (headers, 0);
     }
 
-    let parse_addr_list = |value: &str| -> Vec<EmailAddress> {
-        let mut out = Vec::new();
-        if let Some(a) = EmailAddress::parse(value) {
-            out.push(a);
-            return out;
+    let normalize_space_before_colon = |s: &str| -> String {
+        let mut out = String::with_capacity(s.len());
+        let mut it = s.chars().peekable();
+        while let Some(ch) = it.next() {
+            if ch == ' ' {
+                while matches!(it.peek(), Some(' ')) {
+                    let _ = it.next();
+                }
+                if matches!(it.peek(), Some(':')) {
+                    continue;
+                }
+            }
+            out.push(ch);
         }
-        for part in value.split(';').flat_map(|p| p.split(',')) {
-            if let Some(a) = EmailAddress::parse(part) {
+        out
+    };
+    let normalize_forwarded_header_line = |line: &str| -> String {
+        let mut s = line.trim_start();
+        while let Some(rest) = s.strip_prefix('>') {
+            s = rest.trim_start();
+        }
+        let s = normalize_space_before_colon(s.trim());
+        let parse_emphasis = |input: &str, marker: char| -> Option<String> {
+            if !input.starts_with(marker) {
+                return None;
+            }
+            let colon = input.find(':')?;
+            let key_raw = input.get(..colon)?.trim();
+            let key = key_raw.trim_matches(marker).trim();
+            if key.is_empty() {
+                return None;
+            }
+            let mut after = input.get(colon + 1..)?.trim_start();
+            if let Some(rest) = after.strip_prefix(marker) {
+                after = rest.trim_start();
+            }
+            Some(format!("{key}:{after}"))
+        };
+        if let Some(v) = parse_emphasis(&s, '*') {
+            return v;
+        }
+        if let Some(v) = parse_emphasis(&s, '_') {
+            return v;
+        }
+        s
+    };
+    let split_header_key_value = |line: &str| -> Option<(String, String)> {
+        let normalized = normalize_forwarded_header_line(line);
+        let colon_idx = normalized.find(':')?;
+        let key = normalized[..colon_idx]
+            .replace(' ', "")
+            .to_lowercase();
+        let value = normalized[colon_idx + 1..].trim().to_string();
+        Some((key, value))
+    };
+    let split_address_tokens = |value: &str| -> Vec<String> {
+        let mut out = Vec::new();
+        let mut cur = String::new();
+        let mut angle_depth = 0usize;
+        let mut in_quote = false;
+        for ch in value.chars() {
+            match ch {
+                '"' => {
+                    in_quote = !in_quote;
+                    cur.push(ch);
+                }
+                '<' if !in_quote => {
+                    angle_depth += 1;
+                    cur.push(ch);
+                }
+                '>' if !in_quote => {
+                    angle_depth = angle_depth.saturating_sub(1);
+                    cur.push(ch);
+                }
+                ',' | ';' if !in_quote && angle_depth == 0 => {
+                    let t = cur.trim();
+                    if !t.is_empty() {
+                        out.push(t.to_string());
+                    }
+                    cur.clear();
+                }
+                _ => cur.push(ch),
+            }
+        }
+        let t = cur.trim();
+        if !t.is_empty() {
+            out.push(t.to_string());
+        }
+        out
+    };
+    let parse_addr_list = |value: &str| -> Vec<EmailAddress> {
+        let mut out: Vec<EmailAddress> = Vec::new();
+        for part in split_address_tokens(value) {
+            let part = part.trim();
+            if part.is_empty() {
+                continue;
+            }
+            let part = part.replace("mailto:", "").replace("MAILTO:", "");
+            if let Some(a) = EmailAddress::parse(&part) {
                 if !out.iter().any(|x| x.address == a.address) {
                     out.push(a);
+                }
+                continue;
+            }
+            for email in extract_email_candidates(&part) {
+                if let Some(a) = EmailAddress::new(email, None) {
+                    if !out.iter().any(|x| x.address == a.address) {
+                        out.push(a);
+                    }
                 }
             }
         }
         out
     };
 
-    let mut first_header_idx = None;
     let mut last_header_idx = None;
     let mut header_hits = 0usize;
     let scan_end = lines.len().min(80);
-    for (idx, line) in lines.iter().take(scan_end).enumerate() {
+    let mut idx = 0usize;
+    while idx < scan_end {
+        let line = lines[idx];
         let t = line.trim();
         if t.is_empty() {
+            if header_hits >= 2 {
+                break;
+            }
+            idx += 1;
             continue;
         }
         if t.starts_with("====") || t.starts_with("----") {
             if header_hits >= 2 {
                 break;
             }
+            idx += 1;
             continue;
         }
-        let Some(colon_idx) = t.find(':') else {
+        let Some((key, mut value)) = split_header_key_value(t) else {
             if header_hits >= 2 {
                 break;
             }
+            idx += 1;
             continue;
         };
-        let key = t[..colon_idx].replace(' ', "").to_ascii_lowercase();
-        let value = t[colon_idx + 1..].trim();
+
+        let is_addr_key = matches!(
+            key.as_str(),
+            "from" | "de" | "von" | "da" | "van" | "od" | "to" | "a" | "à" | "para" | "an"
+                | "aan" | "do" | "cc"
+        );
+        let mut last_consumed = idx;
+        let mut j = idx + 1;
+        while j < scan_end {
+            let next = lines[j].trim();
+            if next.is_empty() {
+                break;
+            }
+            if next.starts_with("====") || next.starts_with("----") {
+                break;
+            }
+            if split_header_key_value(next).is_some() {
+                break;
+            }
+            if is_addr_key || lines[j].starts_with(' ') || lines[j].starts_with('\t') {
+                value.push(' ');
+                value.push_str(next);
+                last_consumed = j;
+                j += 1;
+                continue;
+            }
+            break;
+        }
+
         let mut matched = true;
         match key.as_str() {
-            "from" | "de" | "von" | "da" => {
-                let parsed = parse_addr_list(value);
+            "from" | "de" | "von" | "da" | "van" | "od" => {
+                let parsed = parse_addr_list(&value);
                 if !parsed.is_empty() {
                     headers.from = parsed;
                 }
             }
-            "to" | "a" | "à" | "para" | "an" => {
-                let parsed = parse_addr_list(value);
+            "to" | "a" | "à" | "para" | "an" | "aan" | "do" => {
+                let parsed = parse_addr_list(&value);
                 if !parsed.is_empty() {
                     headers.to = parsed;
                 }
             }
             "cc" => {
-                let parsed = parse_addr_list(value);
+                let parsed = parse_addr_list(&value);
                 if !parsed.is_empty() {
                     headers.cc = parsed;
                 }
@@ -1169,14 +1302,15 @@ fn parse_forwarded_headers(raw_block: &str) -> (ParsedForwardedHeaders, usize) {
                     headers.subject = Some(value.to_string());
                 }
             }
-            "date" | "sent" | "envoyé" | "gesendet" | "enviado" | "enviado el" => {
+            "date" | "sent" | "envoyé" | "gesendet" | "enviado" | "enviadoel" | "inviato"
+            | "verzonden" | "wysłano" => {
                 if !value.is_empty() {
                     headers.date = Some(value.to_string());
                 }
             }
             "message-id" => {
                 if !value.is_empty() {
-                    headers.message_id = Some(normalize_message_id(value));
+                    headers.message_id = Some(normalize_message_id(&value));
                 }
             }
             _ => matched = false,
@@ -1185,14 +1319,14 @@ fn parse_forwarded_headers(raw_block: &str) -> (ParsedForwardedHeaders, usize) {
             if header_hits >= 2 {
                 break;
             }
+            idx += 1;
             continue;
         }
-        headers.raw_lines.push(t.to_string());
+        let raw_line = normalize_forwarded_header_line(t);
+        headers.raw_lines.push(raw_line);
         header_hits += 1;
-        if first_header_idx.is_none() {
-            first_header_idx = Some(idx);
-        }
-        last_header_idx = Some(idx);
+        last_header_idx = Some(last_consumed);
+        idx = last_consumed + 1;
     }
 
     let body_start = if header_hits >= 2 {

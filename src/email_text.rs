@@ -155,7 +155,28 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
         }
         out
     };
-    let line_core_header = |line: &str| normalize_space_before_colon(&line_core(line));
+    let line_core_header = |line: &str| {
+        let raw = normalize_space_before_colon(&line_core(line));
+        let normalize_emphasis = |input: &str, marker: char| -> Option<String> {
+            if !input.starts_with(marker) {
+                return None;
+            }
+            let colon = input.find(':')?;
+            let key_raw = input.get(..colon)?.trim();
+            let key = key_raw.trim_matches(marker).trim();
+            if key.is_empty() {
+                return None;
+            }
+            let mut after = input.get(colon + 1..)?.trim_start();
+            if let Some(rest) = after.strip_prefix(marker) {
+                after = rest.trim_start();
+            }
+            Some(format!("{key}:{after}"))
+        };
+        normalize_emphasis(&raw, '*')
+            .or_else(|| normalize_emphasis(&raw, '_'))
+            .unwrap_or(raw)
+    };
     let has_email_like = |line: &str| {
         line.split_whitespace().any(|tok| {
             let t = tok.trim_matches(|c: char| ",;:.()<>[]\"'".contains(c));

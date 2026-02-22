@@ -1071,7 +1071,10 @@ fn parse_forwarded_segment(
     }
 
     let nested_blocks = crate::email_text::segment_email_body(body);
-    segment.reply_text = crate::email_text::reply_text(body, &nested_blocks);
+    segment.reply_text = strip_embedded_header_bundle_from_reply(&crate::email_text::reply_text(
+        body,
+        &nested_blocks,
+    ));
     segment.salutation = first_block_of_kind(body, &nested_blocks, crate::EmailBlockKind::Salutation);
     segment.signature = first_block_of_kind(body, &nested_blocks, crate::EmailBlockKind::Signature);
 
@@ -1126,6 +1129,103 @@ fn parse_forwarded_segment(
     }
 
     segment
+}
+
+fn strip_embedded_header_bundle_from_reply(reply: &str) -> String {
+    let text = reply.trim();
+    if text.is_empty() {
+        return String::new();
+    }
+    let lines: Vec<&str> = text.lines().collect();
+    if lines.is_empty() {
+        return String::new();
+    }
+
+    let normalize_key = |line: &str| -> Option<String> {
+        let mut s = line.trim_start();
+        while let Some(rest) = s.strip_prefix('>') {
+            s = rest.trim_start();
+        }
+        let s = s.trim();
+        let colon = s.find(':')?;
+        let key = s[..colon].replace(' ', "").to_ascii_lowercase();
+        if key.is_empty() {
+            None
+        } else {
+            Some(key)
+        }
+    };
+    let is_header_key = |key: &str| -> bool {
+        matches!(
+            key,
+            "from"
+                | "sent"
+                | "date"
+                | "to"
+                | "cc"
+                | "subject"
+                | "message-id"
+                | "de"
+                | "para"
+                | "asunto"
+                | "enviado"
+                | "enviadoel"
+                | "envoyé"
+                | "objet"
+                | "von"
+                | "gesendet"
+                | "betreff"
+                | "da"
+                | "inviato"
+                | "oggetto"
+                | "van"
+                | "verzonden"
+                | "onderwerp"
+                | "od"
+                | "wysłano"
+                | "temat"
+        )
+    };
+    let is_anchor_key = |key: &str| {
+        matches!(
+            key,
+            "from" | "sent" | "date" | "subject" | "de" | "enviado" | "enviadoel" | "envoyé"
+                | "objet" | "von" | "gesendet" | "betreff" | "inviato" | "oggetto"
+                | "verzonden" | "onderwerp" | "wysłano" | "temat"
+        )
+    };
+
+    let mut bundle_start: Option<usize> = None;
+    for start in 0..lines.len() {
+        let mut header_hits = 0usize;
+        let mut anchor_hits = 0usize;
+        let end = (start + 10).min(lines.len());
+        for line in lines.iter().take(end).skip(start) {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let Some(key) = normalize_key(line) else {
+                continue;
+            };
+            if is_header_key(&key) {
+                header_hits += 1;
+                if is_anchor_key(&key) {
+                    anchor_hits += 1;
+                }
+            }
+        }
+        if header_hits >= 3 && anchor_hits >= 1 {
+            bundle_start = Some(start);
+            break;
+        }
+    }
+
+    if let Some(start) = bundle_start {
+        lines[..start].join("\n").trim().to_string()
+    } else {
+        text.to_string()
+    }
 }
 
 fn parse_forwarded_headers(raw_block: &str) -> (ParsedForwardedHeaders, usize) {

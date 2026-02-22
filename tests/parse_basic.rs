@@ -822,3 +822,75 @@ fn parse_event_hints_ignores_header_bundle_lines() {
     let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
     assert!(parsed.event_hints.is_empty());
 }
+
+#[test]
+fn signature_extracts_terminal_best_regards_without_contact_card() {
+    let text = "Please check this issue with LoRa decoding.\n\nI will test again after lunch.\n\nBest regards,";
+    let blocks = segment_email_body(text);
+    assert!(blocks.iter().any(|b| b.kind == EmailBlockKind::Signature));
+    let reply = reply_text(text, &blocks);
+    assert!(reply.contains("Please check this issue"));
+    assert!(!reply.contains("Best regards"));
+}
+
+#[test]
+fn signature_extracts_terminal_kind_regards_with_name_and_title_tail() {
+    let text = "Thanks for your support.\n\nThe command is now applied.\n\nKind regards,\nAhmed Elkrewi\nCOO";
+    let blocks = segment_email_body(text);
+    assert!(blocks.iter().any(|b| b.kind == EmailBlockKind::Signature));
+    let reply = reply_text(text, &blocks);
+    assert_eq!(reply, "Thanks for your support.\n\nThe command is now applied.");
+}
+
+#[test]
+fn signature_does_not_extract_when_only_long_prose_tail() {
+    let text = "Hello team,\n\nPlease keep this paragraph in reply text even if it is near the end and looks like a conclusion because it is still part of the functional request and not a signature block.\n\nThis second paragraph is also body text and should not be moved.";
+    let blocks = segment_email_body(text);
+    assert!(!blocks.iter().any(|b| b.kind == EmailBlockKind::Signature));
+    let reply = reply_text(text, &blocks);
+    assert!(reply.contains("functional request"));
+    assert!(reply.contains("second paragraph"));
+}
+
+#[test]
+fn signature_does_not_swallow_reply_prose_before_contact_markers() {
+    let text = "The gateway sends valid payloads and we confirmed this in production.\n\nPlease keep this explanatory sentence in reply text because it is not signature data.\n\nBest regards,\nThomas GUILLET\nEDGE TECHNOLOGIES SAS\nthomas.guillet@edgetech.fr";
+    let blocks = segment_email_body(text);
+    let reply = reply_text(text, &blocks);
+    assert!(reply.contains("explanatory sentence"));
+    assert!(!reply.contains("Best regards"));
+    assert!(!reply.contains("EDGE TECHNOLOGIES"));
+}
+
+#[test]
+fn forwarded_segment_strips_embedded_header_bundle_from_reply_text_regression() {
+    let msg = concat!(
+        "From: A <a@example.com>\n",
+        "To: B <b@example.com>\n",
+        "Subject: Fwd: test\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "---- Forwarded message ----\n",
+        "From: Sender <sender@example.com>\n",
+        "To: Receiver <receiver@example.com>\n",
+        "Date: Tue, 20 Jan 2026 12:34:56 +0000\n",
+        "Subject: Re: status\n",
+        "\n",
+        "Top forwarded reply line.\n",
+        "Second reply line.\n",
+        "\n",
+        "From: Legacy <legacy@example.com>\n",
+        "Sent: Monday, January 19, 2026 10:00 AM\n",
+        "To: Sender <sender@example.com>\n",
+        "Subject: previous\n",
+        "\n",
+        "Old quoted body.\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert_eq!(parsed.forwarded_segments.len(), 1);
+    let seg = &parsed.forwarded_segments[0];
+    assert!(seg.reply_text.contains("Top forwarded reply line."));
+    assert!(!seg.reply_text.contains("From: Legacy"));
+    assert!(!seg.reply_text.contains("Sent: Monday"));
+    assert!(!seg.reply_text.contains("Subject: previous"));
+}

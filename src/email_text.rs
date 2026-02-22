@@ -259,6 +259,40 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
                 && w.chars().next().map(|c| c.is_ascii_uppercase()).unwrap_or(false)
         })
     };
+    let looks_like_title_only_line = |line: &str| {
+        let t = line.trim();
+        if t.is_empty() || t.len() > 48 {
+            return false;
+        }
+        let words: Vec<&str> = t.split_whitespace().collect();
+        if words.is_empty() || words.len() > 6 {
+            return false;
+        }
+        let upper_words = words
+            .iter()
+            .filter(|w| w.chars().all(|c| c.is_ascii_uppercase() || c == '&' || c == '-' || c == '/'))
+            .count();
+        if upper_words >= 1 {
+            return true;
+        }
+        let lower = t.to_ascii_lowercase();
+        [
+            "manager",
+            "director",
+            "engineer",
+            "technician",
+            "consultant",
+            "coo",
+            "ceo",
+            "cto",
+            "cfo",
+            "vp",
+            "head of",
+            "lead",
+        ]
+        .iter()
+        .any(|k| lower.contains(k))
+    };
     let signature_contact_score = |line: &str| -> usize {
         let mut score = 0usize;
         if has_email_like(line) {
@@ -585,6 +619,16 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
                 || core.starts_with(c)
         })
     };
+    let is_ambiguous_short_signoff = |core: &str| {
+        let core = core
+            .trim_end_matches(|c: char| c == ',' || c == '.' || c == ';' || c == ':' || c == '!')
+            .trim();
+        matches!(
+            core,
+            "thanks" | "thank you" | "many thanks" | "merci" | "merci beaucoup" | "a+"
+                | "cheers" | "cdlt"
+        )
+    };
     let mut signature_pos: Option<usize> = None;
     let mut fallback_signature_pos: Option<usize> = None;
 
@@ -612,6 +656,14 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
             .map(|c| c.is_ascii_uppercase())
             .unwrap_or(false);
         ends_sentence && has_many_words && starts_upper
+    };
+    let looks_like_long_body_sentence = |line: &str| -> bool {
+        let t = line.trim();
+        if t.len() < 64 {
+            return false;
+        }
+        t.split_whitespace().count() >= 10
+            && (t.ends_with('.') || t.ends_with('!') || t.ends_with('?') || t.ends_with(':'))
     };
 
     for pos in (tail_start_idx..non_empty_before_quote.len()).rev() {
@@ -678,8 +730,18 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
             score -= 2;
         }
 
+        let tail_lines = non_empty_before_quote.len().saturating_sub(pos);
+        let signoff_tail_small = tail_lines <= 4;
+        let ambiguous_short = is_ambiguous_short_signoff(&core);
         let explicit_signoff_candidate = is_signature_cue_line(&core)
-            && (next_has_name || has_contact_marker || blank_gap_before_pos(pos) >= 2);
+            && (
+                next_has_name
+                    || has_contact_marker
+                    || (!ambiguous_short
+                        && blank_gap_before_pos(pos) >= 1
+                        && signoff_tail_small
+                        && !looks_like_body_continuation(t))
+            );
         if explicit_signoff_candidate {
             signature_pos = Some(pos);
             break;
@@ -693,17 +755,70 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
     }
 
     if signature_pos.is_none() {
+        // Terminal sign-off fallback for compact tails (e.g. "Best regards," with optional name/title).
+        for pos in (tail_start_idx..non_empty_before_quote.len()).rev() {
+            let (_idx, s, e) = non_empty_before_quote[pos];
+            let t = get_line((s, e)).trim();
+            if t.is_empty() {
+                continue;
+            }
+            let core = line_core(t);
+            if !is_signature_cue_line(&core) {
+                continue;
+            }
+            let ambiguous_short = is_ambiguous_short_signoff(&core);
+            let gap = blank_gap_before_pos(pos);
+            if gap < 1 {
+                continue;
+            }
+            let tail_lines = non_empty_before_quote.len().saturating_sub(pos);
+            if tail_lines > 4 {
+                continue;
+            }
+            let mut continuation_ok = true;
+            for next in (pos + 1)..non_empty_before_quote.len() {
+                let (_j, ns, ne) = non_empty_before_quote[next];
+                let nt = get_line((ns, ne)).trim();
+                if nt.is_empty() {
+                    continue;
+                }
+                let acceptable = looks_like_name_line(nt)
+                    || looks_like_title_only_line(nt)
+                    || has_soft_contact_marker(nt)
+                    || has_strong_contact_marker(nt);
+                if !acceptable {
+                    continuation_ok = false;
+                    break;
+                }
+            }
+            let has_continuation_lines = non_empty_before_quote.len().saturating_sub(pos) > 1;
+            if continuation_ok
+                && !looks_like_long_body_sentence(t)
+                && (!ambiguous_short || has_continuation_lines)
+            {
+                signature_pos = Some(pos);
+                break;
+            }
+        }
+    }
+
+    if signature_pos.is_none() {
         // Fallback: detect contact-card tails without explicit sign-off cue.
         let mut block_start_pos: Option<usize> = None;
         let mut block_score = 0usize;
         let mut block_lines = 0usize;
         let mut has_strong_marker = false;
+        let mut prose_lines = 0usize;
+        let mut has_signoff_or_marker = false;
         for pos in (tail_start_idx..non_empty_before_quote.len()).rev() {
             let (_idx, s, e) = non_empty_before_quote[pos];
             let t = get_line((s, e)).trim();
             let core = line_core(t);
             let score = signature_contact_score(t);
-            let supportive = score > 0 || looks_like_name_line(t) || is_signature_cue_line(&core);
+            let supportive = score > 0
+                || looks_like_name_line(t)
+                || looks_like_title_only_line(t)
+                || is_signature_cue_line(&core);
             if supportive {
                 block_start_pos = Some(pos);
                 block_score += score;
@@ -711,13 +826,19 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
                 if has_strong_contact_marker(t) {
                     has_strong_marker = true;
                 }
+                if is_signature_cue_line(&core) || score > 0 {
+                    has_signoff_or_marker = true;
+                }
+                if looks_like_long_body_sentence(t) {
+                    prose_lines += 1;
+                }
                 continue;
             }
             if block_start_pos.is_some() {
                 break;
             }
         }
-        if block_score >= 3 && block_lines >= 3 {
+        if block_score >= 3 && block_lines >= 3 && prose_lines <= 1 && has_signoff_or_marker {
             if let Some(start_pos) = block_start_pos {
                 let has_gap = blank_gap_before_pos(start_pos) >= 1;
                 if has_gap || has_strong_marker {
@@ -733,8 +854,16 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
             let (_pidx, ps, pe) = non_empty_before_quote[pos - 1];
             let prev = get_line((ps, pe)).trim();
             let prev_core = line_core(prev);
-            let prev_supportive =
-                signature_contact_score(prev) > 0 || prev_core.contains("[image]") || prev_core == "--";
+            let prev_supportive = prev_core == "--"
+                || prev_core.contains("[image]")
+                || is_signature_cue_line(&prev_core)
+                || looks_like_name_line(prev)
+                || looks_like_title_only_line(prev)
+                || has_soft_contact_marker(prev)
+                || has_strong_contact_marker(prev);
+            if looks_like_long_body_sentence(prev) {
+                break;
+            }
             if is_signature_cue_line(&prev_core)
                 || looks_like_name_line(prev)
                 || prev_supportive

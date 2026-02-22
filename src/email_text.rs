@@ -139,6 +139,23 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
         }
         s.trim().to_ascii_lowercase()
     };
+    let normalize_space_before_colon = |s: &str| -> String {
+        let mut out = String::with_capacity(s.len());
+        let mut it = s.chars().peekable();
+        while let Some(ch) = it.next() {
+            if ch == ' ' {
+                while matches!(it.peek(), Some(' ')) {
+                    let _ = it.next();
+                }
+                if matches!(it.peek(), Some(':')) {
+                    continue;
+                }
+            }
+            out.push(ch);
+        }
+        out
+    };
+    let line_core_header = |line: &str| normalize_space_before_colon(&line_core(line));
 
     let starts_with_any =
         |s: &str, patterns: &[&str]| -> bool { patterns.iter().any(|p| s.starts_with(p)) };
@@ -216,10 +233,12 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
         "best regards",
         "kind regards",
         "regards",
+        "rgds",
         "thanks",
         "cheers",
         "sincerely",
         "mit freundlichen grüßen",
+        "freundliche grüße / best regards",
         "viele grüße",
         "cordialement",
         "bien à vous",
@@ -259,17 +278,24 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
     };
 
     let is_quote_marker_line = |t: &str| {
-        let tl = line_core(t);
+        let tl_raw = line_core(t);
+        let tl = tl_raw.trim_matches('-').trim().to_string();
+        let tl_header = normalize_space_before_colon(&tl);
         let locale_on_prefix = ["on ", "le ", "el ", "am ", "il ", "op ", "w dniu ", "den "];
+        let ends_like_wrote = WROTE_TOKENS
+            .iter()
+            .any(|w| tl.ends_with(':') || tl.ends_with(w));
         starts_with_any(&tl, QUOTE_SEPARATORS)
             || (tl.starts_with("on ")
-                && tl.ends_with(':')
+                && ends_like_wrote
                 && WROTE_TOKENS.iter().any(|w| tl.contains(w)))
             || (locale_on_prefix.iter().any(|p| tl.starts_with(p))
-                && tl.ends_with(':')
+                && ends_like_wrote
                 && WROTE_TOKENS.iter().any(|w| tl.contains(w)))
-            || tl.starts_with("from:") && tl.contains("sent:")
+            || tl_header.starts_with("from:") && tl_header.contains("sent:")
     };
+    let is_header_key_line =
+        |t: &str| starts_with_any(&line_core_header(t), HEADER_KEYS);
 
     let looks_like_header_bundle = |idx: usize| -> bool {
         let mut hits = 0usize;
@@ -280,8 +306,7 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
             if t.is_empty() {
                 continue;
             }
-            let tl = line_core(t);
-            if starts_with_any(&tl, HEADER_KEYS) {
+            if is_header_key_line(t) {
                 hits += 1;
             }
         }
@@ -313,8 +338,11 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
             if t.is_empty() {
                 continue;
             }
-            let tl = line_core(t);
-            if let Some(rest) = tl.strip_prefix("subject:") {
+            let tl = line_core_header(t);
+            let rest = ["subject:", "betreff:", "objet:", "oggetto:", "onderwerp:", "temat:"]
+                .iter()
+                .find_map(|p| tl.strip_prefix(p));
+            if let Some(rest) = rest {
                 if rest.trim_start().starts_with("fwd:") || rest.trim_start().starts_with("fw:") {
                     return EmailBlockKind::Forwarded;
                 }
@@ -345,10 +373,7 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
             break;
         }
 
-        let tl = line_core(t);
-        if (tl.starts_with("from:") || tl.starts_with("sent:") || tl.starts_with("date:"))
-            && looks_like_header_bundle(idx)
-        {
+        if is_header_key_line(t) && looks_like_header_bundle(idx) {
             quote_start = Some((s, header_bundle_kind(idx)));
             break;
         }

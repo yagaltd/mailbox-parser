@@ -81,6 +81,47 @@ Export/render is done by `mailbox-parser-cli`. Ingest into the store is done by 
 
 Detection is line-based and includes multilingual quote/header cues plus tail-window signature/disclaimer heuristics.
 
+Notable heuristics:
+
+- Outlook-style header bundles are recognized across multiple locales (for example `From:/Sent:/...`, `Von:/Gesendet:/...`, `De :/Envoyé :/...`).
+- Dashed quote separators like `---- on ... wrote ----` are treated as quoted-history boundaries.
+- Mixed-language sign-offs like `Freundliche Grüße / Best regards` and short forms like `Rgds` are treated as signature cues.
+
+### V3 email ingest/chunking flow
+
+`mailbox-parser` provides segmentation; V3 SDK adapters/builders decide what is embedded.
+
+```mermaid
+flowchart TD
+    A[Raw RFC822 email] --> B[mailbox-parser segmentation]
+    B --> C{Has reply chain?}
+
+    C -->|No standalone| S1[Keep: salutation + body reply + signature]
+    C -->|Yes replied| R1[Keep: salutation + newest reply body + signature]
+
+    S1 --> D[build_email_ingest_text]
+    R1 --> D
+
+    B --> X[quoted/forwarded/disclaimer/post-signature blocks]
+    X --> Y[Dropped from embed payload]
+
+    A --> Z[Raw bytes stored separately]
+    Z --> H[Node.content_hash]
+
+    D --> E[Document.text_content for embedding]
+    E --> F[Boundary-aware chunker max 2000 chars]
+    F --> G[Prefer split: paragraph > line break > sentence end]
+    G --> N[Chunks 1..n: clean reply-first text only]
+    E --> M[Doc node: metadata + links]
+```
+
+Chunking behavior in V3 SDK:
+
+- Target max size is `chunk_max_chars` (default `2000`).
+- Splits avoid mid-sentence when possible by preferring paragraph, then line, then sentence boundaries.
+- If no boundary exists in range, fallback is whitespace/hard split.
+- Very short messages under the limit remain a single chunk.
+
 ### MBOX parsing
 
 For `.mbox` files:

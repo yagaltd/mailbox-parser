@@ -186,3 +186,51 @@ fn does_not_treat_hyphen_bullets_as_signature() {
     assert!(reply.contains("Agenda:"));
     assert!(reply.contains("- item one"));
 }
+
+#[test]
+fn parse_reply_strips_de_outlook_header_bundle() {
+    let text = "Hi Leonardo,\n\nDanke fuer das Update.\n\nFreundliche Grüße / Best regards\nBenedikt\n\nVon: EDGE TECHNOLOGIES <support@example.com>\nGesendet: Dienstag, 10. Februar 2026 07:16\nAn: Thomas <thomas@example.com>\nCc: Support <support@example.com>\nBetreff: Re: Thema\n\nHi Benedikt,\nold";
+    let blocks = segment_email_body(text);
+    let reply = reply_text(text, &blocks);
+    assert!(reply.contains("Danke fuer das Update."));
+    assert!(!reply.contains("Von: EDGE TECHNOLOGIES"));
+    assert!(!reply.contains("Betreff: Re: Thema"));
+}
+
+#[test]
+fn parse_reply_strips_fr_outlook_header_bundle_with_colon_space() {
+    let text = "Bonjour,\n\nMerci pour votre retour.\n\nCordialement,\nHerve\n\nDe : EDGE TECHNOLOGIES <support@example.com>\nEnvoyé : mardi 10 février 2026 02:55\nÀ : Thomas <thomas@example.com>\nCc : support@example.com\nObjet : Re: TR: VARIABLES DATE ET HEURE\n\nBonjour Hervé,\nancien";
+    let blocks = segment_email_body(text);
+    let reply = reply_text(text, &blocks);
+    assert!(reply.contains("Merci pour votre retour."));
+    assert!(!reply.contains("De : EDGE TECHNOLOGIES"));
+    assert!(!reply.contains("Objet : Re: TR: VARIABLES DATE ET HEURE"));
+}
+
+#[test]
+fn parse_reply_strips_dashed_on_wrote_marker() {
+    let text = "Reply body\n\n---- on Thu, 18 Dec 2025 16:40:44 +0700 Thomas <t@x> wrote ----\n> quoted";
+    let blocks = segment_email_body(text);
+    let reply = reply_text(text, &blocks);
+    assert!(reply.contains("Reply body"));
+    assert!(!reply.contains("quoted"));
+    assert!(!reply.contains("wrote ----"));
+}
+
+#[test]
+fn parse_signature_detects_mixed_de_en_signoff() {
+    let text = "Main message body.\n\nFreundliche Grüße / Best regards\nBenedikt Wilhelm\nPharma Technology Expert";
+    let blocks = segment_email_body(text);
+    assert!(blocks.iter().any(|b| b.kind == EmailBlockKind::Signature));
+    let reply = reply_text(text, &blocks);
+    assert_eq!(reply, "Main message body.");
+}
+
+#[test]
+fn parse_signature_detects_rgds_signoff() {
+    let text = "Can we schedule this next week?\n\nRgds\nThomas";
+    let blocks = segment_email_body(text);
+    assert!(blocks.iter().any(|b| b.kind == EmailBlockKind::Signature));
+    let reply = reply_text(text, &blocks);
+    assert_eq!(reply, "Can we schedule this next week?");
+}

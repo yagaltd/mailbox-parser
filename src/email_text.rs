@@ -339,6 +339,11 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
         "regards",
         "rgds",
         "thanks",
+        "thank you",
+        "many thanks",
+        "merci",
+        "merci beaucoup",
+        "a+",
         "cheers",
         "sincerely",
         "mit freundlichen grüßen",
@@ -525,12 +530,21 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
     let tail_scan_take = non_empty_before_quote.len().min(60);
     let tail_start_idx = non_empty_before_quote.len().saturating_sub(tail_scan_take);
     let is_signature_cue_line = |core: &str| {
+        const STRICT_SIGNOFF_CUES: &[&str] = &[
+            "thanks",
+            "thank you",
+            "many thanks",
+            "merci",
+            "merci beaucoup",
+            "a+",
+            "cheers",
+        ];
         SIGNATURE_CUES.iter().any(|c| {
-            if *c == "thanks" {
-                return core == "thanks"
-                    || core == "thanks,"
-                    || core == "thanks."
-                    || core == "thanks!";
+            if STRICT_SIGNOFF_CUES.iter().any(|s| s == c) {
+                return core == *c
+                    || core == format!("{c},")
+                    || core == format!("{c}.")
+                    || core == format!("{c}!");
             }
             core == *c
                 || core.starts_with(&format!("{c},"))

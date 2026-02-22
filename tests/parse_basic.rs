@@ -236,6 +236,21 @@ fn parse_signature_detects_rgds_signoff() {
 }
 
 #[test]
+fn parse_signature_detects_thank_you_merci_and_a_plus_signoffs() {
+    let cases = [
+        "Body line.\n\nThank you,\nAlice",
+        "Corps du message.\n\nMerci,\nAlice",
+        "Message body.\n\nA+\nAlice",
+    ];
+    for text in cases {
+        let blocks = segment_email_body(text);
+        assert!(blocks.iter().any(|b| b.kind == EmailBlockKind::Signature));
+        let reply = reply_text(text, &blocks);
+        assert_eq!(reply, text.lines().next().unwrap_or_default());
+    }
+}
+
+#[test]
 fn parse_extracts_contact_hints_and_signature_entities() {
     let msg = concat!(
         "From: Alice <alice@example.com>\n",

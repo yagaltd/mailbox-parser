@@ -206,6 +206,12 @@ pub struct ParsedContactHint {
     pub name: Option<String>,
     pub email: Option<String>,
     pub phone: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_type: Option<ContactProfileType>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handle: Option<String>,
     pub source: ContactHintSource,
     pub role: ContactHintRole,
     #[serde(default)]
@@ -214,6 +220,30 @@ pub struct ParsedContactHint {
     pub company_domain: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub link_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub linked_entity_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link_reason: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ContactProfileType {
+    Website,
+    LinkedinPerson,
+    LinkedinCompany,
+    TwitterX,
+    Instagram,
+    Tiktok,
+    Youtube,
+    Facebook,
+    Github,
+    Other,
+}
+impl Default for ContactProfileType {
+    fn default() -> Self {
+        Self::Other
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -1390,18 +1420,162 @@ fn extract_phone_candidates(text: &str) -> Vec<String> {
 }
 
 fn extract_url_candidates(text: &str) -> Vec<String> {
+    fn trim_url_token(token: &str) -> &str {
+        token.trim_matches(|c: char| {
+            c == '<'
+                || c == '>'
+                || c == '('
+                || c == ')'
+                || c == ','
+                || c == ';'
+                || c == '.'
+                || c == '!'
+                || c == '?'
+                || c == '"'
+                || c == '\''
+        })
+    }
+    fn looks_like_host_path(raw: &str) -> bool {
+        if raw.contains(' ') {
+            return false;
+        }
+        if raw.contains('@') && !raw.contains('/') {
+            return false;
+        }
+        let Some((host, _)) = raw.split_once('.') else {
+            return false;
+        };
+        !host.is_empty()
+    }
+    fn canonicalize_url(token: &str) -> Option<String> {
+        let t = trim_url_token(token);
+        if t.is_empty() {
+            return None;
+        }
+        let lower = t.to_ascii_lowercase();
+        if lower.starts_with("mailto:") {
+            return None;
+        }
+        let with_scheme = if lower.starts_with("http://") || lower.starts_with("https://") {
+            t.to_string()
+        } else if lower.starts_with("www.") || looks_like_host_path(t) {
+            format!("https://{}", t)
+        } else {
+            return None;
+        };
+        let mut url = with_scheme.trim().to_string();
+        while url.ends_with(['.', ',', ';', '!', '?', ')', ']']) {
+            url.pop();
+        }
+        if url.is_empty() { None } else { Some(url) }
+    }
+
     let mut out = Vec::new();
     for token in text.split_whitespace() {
-        let t = token
-            .trim_matches(|c: char| c == '<' || c == '>' || c == '(' || c == ')' || c == ',');
-        let lower = t.to_ascii_lowercase();
-        if (lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("www."))
-            && !out.iter().any(|u| u == t)
-        {
-            out.push(t.to_string());
+        if let Some(url) = canonicalize_url(token) {
+            if !out.iter().any(|u| u == &url) {
+                out.push(url);
+            }
         }
     }
     out
+}
+
+fn split_url_host_path(url: &str) -> Option<(String, String)> {
+    let mut u = url.trim();
+    if let Some(rest) = u.strip_prefix("http://") {
+        u = rest;
+    } else if let Some(rest) = u.strip_prefix("https://") {
+        u = rest;
+    }
+    let u = u.trim_start_matches("www.");
+    let mut end = u.len();
+    for sep in ['/', '?', '#'] {
+        if let Some(i) = u.find(sep) {
+            end = end.min(i);
+        }
+    }
+    let host = u.get(..end)?.trim().trim_matches('.');
+    if host.is_empty() {
+        return None;
+    }
+    let rest = u.get(end..).unwrap_or("").to_string();
+    Some((host.to_ascii_lowercase(), rest))
+}
+
+fn root_domain(domain: &str) -> String {
+    let parts: Vec<&str> = domain.split('.').filter(|p| !p.is_empty()).collect();
+    if parts.len() >= 2 {
+        format!("{}.{}", parts[parts.len() - 2], parts[parts.len() - 1])
+    } else {
+        domain.to_string()
+    }
+}
+
+fn first_path_segment(path: &str) -> Option<String> {
+    let p = path.trim_start_matches('/');
+    let p = p.split(['/', '?', '#']).next().unwrap_or("").trim();
+    if p.is_empty() {
+        None
+    } else {
+        Some(p.to_ascii_lowercase())
+    }
+}
+
+fn normalize_token_alnum(s: &str) -> String {
+    s.chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect::<String>()
+        .to_ascii_lowercase()
+}
+
+fn tokenize_name_for_match(s: &str) -> Vec<String> {
+    s.split(|c: char| !c.is_ascii_alphanumeric())
+        .filter_map(|t| {
+            let t = t.trim().to_ascii_lowercase();
+            if t.len() >= 3 { Some(t) } else { None }
+        })
+        .collect()
+}
+
+fn classify_profile_url(url: &str) -> (ContactProfileType, Option<String>, String) {
+    let Some((host, path)) = split_url_host_path(url) else {
+        return (ContactProfileType::Other, None, String::new());
+    };
+    let seg = first_path_segment(&path);
+    if host.ends_with("linkedin.com") {
+        let p = path.trim_start_matches('/').to_ascii_lowercase();
+        if p.starts_with("company/") {
+            let handle = p.trim_start_matches("company/").split('/').next().unwrap_or("").trim();
+            let h = if handle.is_empty() { None } else { Some(handle.to_string()) };
+            return (ContactProfileType::LinkedinCompany, h, host);
+        }
+        if p.starts_with("in/") {
+            let handle = p.trim_start_matches("in/").split('/').next().unwrap_or("").trim();
+            let h = if handle.is_empty() { None } else { Some(handle.to_string()) };
+            return (ContactProfileType::LinkedinPerson, h, host);
+        }
+        return (ContactProfileType::Other, seg, host);
+    }
+    if host.ends_with("x.com") || host.ends_with("twitter.com") {
+        return (ContactProfileType::TwitterX, seg, host);
+    }
+    if host.ends_with("instagram.com") {
+        return (ContactProfileType::Instagram, seg, host);
+    }
+    if host.ends_with("tiktok.com") {
+        return (ContactProfileType::Tiktok, seg, host);
+    }
+    if host.ends_with("youtube.com") || host.ends_with("youtu.be") {
+        return (ContactProfileType::Youtube, seg, host);
+    }
+    if host.ends_with("facebook.com") {
+        return (ContactProfileType::Facebook, seg, host);
+    }
+    if host.ends_with("github.com") {
+        return (ContactProfileType::Github, seg, host);
+    }
+    (ContactProfileType::Website, None, host)
 }
 
 fn derive_signature_line_buckets(sig: &str) -> (Vec<String>, Vec<String>, Vec<String>) {
@@ -1504,11 +1678,16 @@ fn push_header_contact_hints(
             name: a.name.clone(),
             email: Some(email.clone()),
             phone: None,
+            url: None,
+            profile_type: None,
+            handle: None,
             source: source.clone(),
             role: role.clone(),
             confidence: HintConfidence::High,
             company_domain: email_domain(&email),
             link_key: compute_link_key(a.name.as_deref(), Some(&email)),
+            linked_entity_key: None,
+            link_reason: None,
         });
     }
 }
@@ -1551,11 +1730,16 @@ fn extract_contact_hints(
                 name: Some(n.to_string()),
                 email: None,
                 phone: None,
+                url: None,
+                profile_type: None,
+                handle: None,
                 source: ContactHintSource::Salutation,
                 role: ContactHintRole::Mentioned,
                 confidence: HintConfidence::Low,
                 company_domain: None,
                 link_key: compute_link_key(Some(n), None),
+                linked_entity_key: None,
+                link_reason: None,
             });
         }
     }
@@ -1565,11 +1749,16 @@ fn extract_contact_hints(
             name: None,
             email: Some(email.clone()),
             phone: None,
+            url: None,
+            profile_type: None,
+            handle: None,
             source: ContactHintSource::Signature,
             role: ContactHintRole::Mentioned,
             confidence: HintConfidence::Medium,
             company_domain: email_domain(email),
             link_key: compute_link_key(None, Some(email)),
+            linked_entity_key: None,
+            link_reason: None,
         });
     }
     for phone in &signature_entities.phones {
@@ -1577,11 +1766,150 @@ fn extract_contact_hints(
             name: None,
             email: None,
             phone: Some(phone.clone()),
+            url: None,
+            profile_type: None,
+            handle: None,
             source: ContactHintSource::Signature,
             role: ContactHintRole::Mentioned,
             confidence: HintConfidence::Low,
             company_domain: None,
             link_key: None,
+            linked_entity_key: None,
+            link_reason: None,
+        });
+    }
+
+    #[derive(Clone)]
+    struct LinkAnchor {
+        entity_key: String,
+        email_domain: Option<String>,
+        name_tokens: Vec<String>,
+        from_header: bool,
+    }
+    let mut anchors = Vec::new();
+    for h in &out {
+        let Some(entity_key) = h
+            .link_key
+            .clone()
+            .or_else(|| compute_link_key(h.name.as_deref(), h.email.as_deref()))
+        else {
+            continue;
+        };
+        let domain = h
+            .email
+            .as_deref()
+            .and_then(email_domain)
+            .or_else(|| h.company_domain.clone());
+        let mut name_tokens = Vec::new();
+        if let Some(name) = h.name.as_deref() {
+            name_tokens.extend(tokenize_name_for_match(name));
+        }
+        anchors.push(LinkAnchor {
+            entity_key,
+            email_domain: domain,
+            name_tokens,
+            from_header: h.source == ContactHintSource::FromHeader,
+        });
+    }
+
+    let mut seen_urls = std::collections::HashSet::new();
+    let org_tokens: Vec<String> = signature_entities
+        .organization_lines
+        .iter()
+        .flat_map(|l| tokenize_name_for_match(l))
+        .collect();
+    for url in &signature_entities.urls {
+        let norm = url.trim();
+        if norm.is_empty() {
+            continue;
+        }
+        let key = norm.to_ascii_lowercase();
+        if !seen_urls.insert(key) {
+            continue;
+        }
+        let (profile_type, handle, host) = classify_profile_url(norm);
+        let handle_norm = handle
+            .as_deref()
+            .map(normalize_token_alnum)
+            .filter(|h| !h.is_empty());
+        let host_root = if host.is_empty() { None } else { Some(root_domain(&host)) };
+
+        let mut best: Option<(usize, &LinkAnchor, &'static str)> = None;
+        for a in &anchors {
+            let mut score = 0usize;
+            let mut reason = "weak";
+            if let (Some(ad), Some(hr)) = (a.email_domain.as_deref(), host_root.as_deref()) {
+                if root_domain(ad) == *hr {
+                    score += 3;
+                    reason = "domain_match";
+                }
+            }
+            if let Some(handle_value) = handle_norm.as_deref() {
+                if a.name_tokens
+                    .iter()
+                    .any(|t| handle_value.contains(t) || t.contains(handle_value))
+                {
+                    score += 2;
+                    reason = "name_handle_match";
+                }
+                if matches!(profile_type, ContactProfileType::LinkedinCompany)
+                    && org_tokens
+                        .iter()
+                        .any(|t| handle_value.contains(t) || t.contains(handle_value))
+                {
+                    score += 2;
+                    reason = "org_slug_match";
+                }
+            }
+            if a.from_header {
+                score += 1;
+            }
+            match best {
+                Some((best_score, best_anchor, _))
+                    if score < best_score || (score == best_score && best_anchor.from_header) => {}
+                _ => {
+                    if score > 0 {
+                        best = Some((score, a, reason));
+                    }
+                }
+            }
+        }
+
+        let mut confidence = if matches!(profile_type, ContactProfileType::Website) {
+            HintConfidence::Low
+        } else {
+            HintConfidence::Medium
+        };
+        let mut linked_entity_key = None;
+        let mut link_reason = None;
+        let mut hint_link_key = None;
+        if let Some((score, anchor, reason)) = best {
+            if score >= 3 {
+                linked_entity_key = Some(anchor.entity_key.clone());
+                link_reason = Some(reason.to_string());
+                hint_link_key = Some(anchor.entity_key.clone());
+                confidence = if score >= 5 {
+                    HintConfidence::High
+                } else {
+                    HintConfidence::Medium
+                };
+            }
+        }
+
+        out.push(ParsedContactHint {
+            name: None,
+            email: None,
+            phone: None,
+            url: Some(norm.to_string()),
+            profile_type: Some(profile_type),
+            handle,
+            source: ContactHintSource::Signature,
+            role: ContactHintRole::Mentioned,
+            confidence,
+            company_domain: if host.is_empty() { None } else { Some(host.clone()) },
+            link_key: hint_link_key,
+            linked_entity_key,
+            link_reason,
         });
     }
     out

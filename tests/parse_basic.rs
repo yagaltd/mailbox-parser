@@ -479,6 +479,8 @@ fn parse_extracts_contact_hints_and_signature_entities() {
         "Acme GmbH\n",
         "anna.mueller@example.de\n",
         "+49 30 1234 5678\n",
+        "linkedin.com/in/annamueller\n",
+        "https://www.acme.example/company-page\n",
     );
     let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
 
@@ -501,7 +503,98 @@ fn parse_extracts_contact_hints_and_signature_entities() {
             .iter()
             .any(|e| e == "anna.mueller@example.de")
     );
+    assert!(
+        parsed
+            .signature_entities
+            .urls
+            .iter()
+            .any(|u| u.contains("linkedin.com/in/annamueller"))
+    );
+    assert!(
+        parsed.contact_hints.iter().any(|h| {
+            h.url.as_deref().is_some_and(|u| u.contains("linkedin.com/in/annamueller"))
+                && h.profile_type.is_some()
+        })
+    );
     assert!(!parsed.signature_entities.is_partial);
+}
+
+#[test]
+fn parse_contact_hints_extracts_bare_social_domains() {
+    let msg = concat!(
+        "From: Nicolas Guillou <nicolas.guillou@anian.co>\n",
+        "To: Support <support@sensa.io>\n",
+        "Subject: signature links\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Best regards,\n",
+        "Nicolas Guillou\n",
+        "linkedin.com/company/anian-co\n",
+        "x.com/nicolasg\n",
+        "instagram.com/anian.co\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert!(parsed.contact_hints.iter().any(|h| {
+        h.url.as_deref()
+            .is_some_and(|u| u.contains("linkedin.com/company/anian-co"))
+            && h
+                .profile_type
+                .as_ref()
+                .is_some_and(|t| t == &mailbox_parser::ContactProfileType::LinkedinCompany)
+    }));
+    assert!(parsed.contact_hints.iter().any(|h| {
+        h.url.as_deref().is_some_and(|u| u.contains("x.com/nicolasg"))
+            && h
+                .profile_type
+                .as_ref()
+                .is_some_and(|t| t == &mailbox_parser::ContactProfileType::TwitterX)
+    }));
+}
+
+#[test]
+fn parse_contact_hints_links_url_to_sender_when_domain_matches() {
+    let msg = concat!(
+        "From: Nicolas Guillou <nicolas.guillou@anian.co>\n",
+        "To: Support <support@sensa.io>\n",
+        "Subject: signature links\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Best regards,\n",
+        "Nicolas Guillou\n",
+        "https://linkedin.com/company/anian-co\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    let linked = parsed
+        .contact_hints
+        .iter()
+        .find(|h| {
+            h.url.as_deref()
+                .is_some_and(|u| u.contains("linkedin.com/company/anian-co"))
+        })
+        .expect("expected linkedin hint");
+    assert!(linked.linked_entity_key.is_some());
+    assert!(linked.link_reason.is_some());
+}
+
+#[test]
+fn parse_contact_hints_keeps_ambiguous_urls_unlinked() {
+    let msg = concat!(
+        "From: Alice <alice@example.com>\n",
+        "To: Bob <bob@example.com>\n",
+        "Subject: signature links\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Best regards,\n",
+        "Alice\n",
+        "https://tiktok.com/@randomvendor\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    let hint = parsed
+        .contact_hints
+        .iter()
+        .find(|h| h.url.as_deref().is_some_and(|u| u.contains("tiktok.com")))
+        .expect("expected tiktok hint");
+    assert!(hint.linked_entity_key.is_none());
 }
 
 #[test]

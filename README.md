@@ -19,7 +19,7 @@ Rust library for:
 - `body_canonical` (a cleaned-up body intended for downstream processing)
 - Attachments (including inline parts) with `sha256` and (in-memory) `bytes`
 - Parser hints for downstream ingestion:
-  - `contact_hints` (header/salutation/signature entities)
+  - `contact_hints` (header/salutation/signature entities, including social/profile URL hints)
   - `signature_entities` (emails/phones/urls/org/title/address lines)
   - `attachment_hints` (inline/logo/pixel-like + size bucket)
   - `event_hints` (meeting/shipping/deadline/availability candidates + completeness)
@@ -105,6 +105,7 @@ Notable heuristics:
 - Additional strict short sign-offs are supported (`thank you`, `many thanks`, `merci`, `a+`, `cheers`) while avoiding sentence-level false positives.
 - Signature extraction now uses contact-card signals (email/phone/url/cid/address lines) so long corporate signatures are still split correctly even when the sign-off is far from the end of the message.
 - Forwarded header parsing unfolds multiline `To/Cc` values and tokenizes recipients safely, avoiding merged-address artifacts in forwarded segments.
+- Signature URLs are classified into profile types (for example `linkedin_company`, `linkedin_person`, `twitter_x`, `website`) and emitted as `contact_hints` with confidence-based linkage metadata when strong domain/name signals exist.
 
 ### Event hint model
 

@@ -43,6 +43,8 @@ pub struct ParsedEmail {
     pub attachments: Vec<ParsedAttachment>,
     pub forwarded_messages: Vec<ParsedForwardedMessage>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub forwarded_segments: Vec<ParsedForwardedSegment>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub contact_hints: Vec<ParsedContactHint>,
     #[serde(default, skip_serializing_if = "ParsedSignatureEntities::is_empty")]
     pub signature_entities: ParsedSignatureEntities,
@@ -112,6 +114,49 @@ pub struct ParsedForwardedMessage {
     pub subject: Option<String>,
     pub from: Vec<EmailAddress>,
     pub date: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct ParsedForwardedHeaders {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub from: Vec<EmailAddress>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub to: Vec<EmailAddress>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cc: Vec<EmailAddress>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub date: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subject: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub raw_lines: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct ParsedForwardedSegment {
+    pub depth: usize,
+    #[serde(default)]
+    pub headers: ParsedForwardedHeaders,
+    #[serde(default)]
+    pub reply_text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub salutation: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub disclaimer_blocks: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub quoted_blocks: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub forwarded_blocks: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub nested: Vec<ParsedForwardedSegment>,
+    #[serde(default)]
+    pub parse_confidence: HintConfidence,
+    #[serde(default)]
+    pub has_unparsed_tail: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -351,6 +396,7 @@ pub fn parse_rfc822(bytes: &[u8]) -> Result<ParsedEmail> {
     let salutation = first_block_of_kind(&body_canonical, &blocks, crate::EmailBlockKind::Salutation);
     let signature = first_block_of_kind(&body_canonical, &blocks, crate::EmailBlockKind::Signature);
     let reply = crate::email_text::reply_text(&body_canonical, &blocks);
+    let forwarded_segments = parse_forwarded_segments_from_blocks(&body_canonical, &blocks);
     let signature_entities = extract_signature_entities(signature.as_deref());
     let contact_hints = extract_contact_hints(
         &from,
@@ -381,6 +427,7 @@ pub fn parse_rfc822(bytes: &[u8]) -> Result<ParsedEmail> {
         body_canonical,
         attachments,
         forwarded_messages,
+        forwarded_segments,
         contact_hints,
         signature_entities,
         attachment_hints,
@@ -929,6 +976,235 @@ fn first_block_of_kind(
         }
     }
     None
+}
+
+fn parse_forwarded_segments_from_blocks(
+    body_canonical: &str,
+    blocks: &[crate::EmailBlock],
+) -> Vec<ParsedForwardedSegment> {
+    let mut out = Vec::new();
+    let mut stack = std::collections::HashSet::new();
+    for b in blocks {
+        if b.kind != crate::EmailBlockKind::Forwarded {
+            continue;
+        }
+        let Some(raw) = body_canonical.get(b.byte_start..b.byte_end) else {
+            continue;
+        };
+        let raw = raw.trim();
+        if raw.is_empty() {
+            continue;
+        }
+        out.push(parse_forwarded_segment(raw, 0, &mut stack));
+    }
+    out
+}
+
+fn parse_forwarded_segment(
+    raw_block: &str,
+    depth: usize,
+    stack: &mut std::collections::HashSet<u64>,
+) -> ParsedForwardedSegment {
+    let raw = raw_block.trim();
+    if raw.is_empty() {
+        return ParsedForwardedSegment {
+            depth,
+            parse_confidence: HintConfidence::Low,
+            has_unparsed_tail: false,
+            ..Default::default()
+        };
+    }
+
+    let (headers, body_start_line) = parse_forwarded_headers(raw);
+    let mut lines: Vec<&str> = raw.lines().collect();
+    if lines.is_empty() {
+        lines.push(raw);
+    }
+    let body = if body_start_line < lines.len() {
+        lines[body_start_line..].join("\n")
+    } else {
+        raw.to_string()
+    };
+    let body = body.trim();
+    let mut segment = ParsedForwardedSegment {
+        depth,
+        headers,
+        ..Default::default()
+    };
+    if body.is_empty() {
+        segment.parse_confidence = if !segment.headers.raw_lines.is_empty() {
+            HintConfidence::Medium
+        } else {
+            HintConfidence::Low
+        };
+        return segment;
+    }
+
+    let nested_blocks = crate::email_text::segment_email_body(body);
+    segment.reply_text = crate::email_text::reply_text(body, &nested_blocks);
+    segment.salutation = first_block_of_kind(body, &nested_blocks, crate::EmailBlockKind::Salutation);
+    segment.signature = first_block_of_kind(body, &nested_blocks, crate::EmailBlockKind::Signature);
+
+    for b in &nested_blocks {
+        let Some(s) = body.get(b.byte_start..b.byte_end) else {
+            continue;
+        };
+        let t = s.trim();
+        if t.is_empty() {
+            continue;
+        }
+        match b.kind {
+            crate::EmailBlockKind::Disclaimer => segment.disclaimer_blocks.push(t.to_string()),
+            crate::EmailBlockKind::Quoted => segment.quoted_blocks.push(t.to_string()),
+            crate::EmailBlockKind::Forwarded => segment.forwarded_blocks.push(t.to_string()),
+            crate::EmailBlockKind::Reply
+            | crate::EmailBlockKind::Salutation
+            | crate::EmailBlockKind::Signature => {}
+        }
+    }
+
+    segment.parse_confidence = if segment.headers.raw_lines.len() >= 2 && !segment.reply_text.is_empty() {
+        HintConfidence::High
+    } else if !segment.headers.raw_lines.is_empty()
+        || !segment.reply_text.is_empty()
+        || !segment.signature.as_deref().unwrap_or("").is_empty()
+    {
+        HintConfidence::Medium
+    } else {
+        HintConfidence::Low
+    };
+
+    for nested_raw in &segment.forwarded_blocks {
+        let nested_raw = nested_raw.trim();
+        if nested_raw.len() < 48 {
+            segment.has_unparsed_tail = true;
+            continue;
+        }
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        use std::hash::{Hash, Hasher};
+        nested_raw.hash(&mut hasher);
+        let fp = hasher.finish();
+        if stack.contains(&fp) {
+            segment.has_unparsed_tail = true;
+            continue;
+        }
+        stack.insert(fp);
+        segment
+            .nested
+            .push(parse_forwarded_segment(nested_raw, depth + 1, stack));
+        stack.remove(&fp);
+    }
+
+    segment
+}
+
+fn parse_forwarded_headers(raw_block: &str) -> (ParsedForwardedHeaders, usize) {
+    let mut headers = ParsedForwardedHeaders::default();
+    let lines: Vec<&str> = raw_block.lines().collect();
+    if lines.is_empty() {
+        return (headers, 0);
+    }
+
+    let parse_addr_list = |value: &str| -> Vec<EmailAddress> {
+        let mut out = Vec::new();
+        if let Some(a) = EmailAddress::parse(value) {
+            out.push(a);
+            return out;
+        }
+        for part in value.split(';').flat_map(|p| p.split(',')) {
+            if let Some(a) = EmailAddress::parse(part) {
+                if !out.iter().any(|x| x.address == a.address) {
+                    out.push(a);
+                }
+            }
+        }
+        out
+    };
+
+    let mut first_header_idx = None;
+    let mut last_header_idx = None;
+    let mut header_hits = 0usize;
+    let scan_end = lines.len().min(80);
+    for (idx, line) in lines.iter().take(scan_end).enumerate() {
+        let t = line.trim();
+        if t.is_empty() {
+            continue;
+        }
+        if t.starts_with("====") || t.starts_with("----") {
+            if header_hits >= 2 {
+                break;
+            }
+            continue;
+        }
+        let Some(colon_idx) = t.find(':') else {
+            if header_hits >= 2 {
+                break;
+            }
+            continue;
+        };
+        let key = t[..colon_idx].replace(' ', "").to_ascii_lowercase();
+        let value = t[colon_idx + 1..].trim();
+        let mut matched = true;
+        match key.as_str() {
+            "from" | "de" | "von" | "da" => {
+                let parsed = parse_addr_list(value);
+                if !parsed.is_empty() {
+                    headers.from = parsed;
+                }
+            }
+            "to" | "a" | "à" | "para" | "an" => {
+                let parsed = parse_addr_list(value);
+                if !parsed.is_empty() {
+                    headers.to = parsed;
+                }
+            }
+            "cc" => {
+                let parsed = parse_addr_list(value);
+                if !parsed.is_empty() {
+                    headers.cc = parsed;
+                }
+            }
+            "subject" | "objet" | "betreff" | "asunto" | "oggetto" | "onderwerp" | "temat" => {
+                if !value.is_empty() {
+                    headers.subject = Some(value.to_string());
+                }
+            }
+            "date" | "sent" | "envoyé" | "gesendet" | "enviado" | "enviado el" => {
+                if !value.is_empty() {
+                    headers.date = Some(value.to_string());
+                }
+            }
+            "message-id" => {
+                if !value.is_empty() {
+                    headers.message_id = Some(normalize_message_id(value));
+                }
+            }
+            _ => matched = false,
+        }
+        if !matched {
+            if header_hits >= 2 {
+                break;
+            }
+            continue;
+        }
+        headers.raw_lines.push(t.to_string());
+        header_hits += 1;
+        if first_header_idx.is_none() {
+            first_header_idx = Some(idx);
+        }
+        last_header_idx = Some(idx);
+    }
+
+    let body_start = if header_hits >= 2 {
+        let mut i = last_header_idx.unwrap_or(0) + 1;
+        while i < lines.len() && lines[i].trim().is_empty() {
+            i += 1;
+        }
+        i
+    } else {
+        0
+    };
+    (headers, body_start)
 }
 
 fn normalize_name_like(s: &str) -> String {

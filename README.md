@@ -53,6 +53,7 @@ For a stable export/ingest format, you can convert `ParsedThread` → `Canonical
 
 - `CanonicalMessage.reply_text`: the top-level reply text (quoted history stripped)
 - `CanonicalMessage.quoted_blocks` / `forwarded_blocks` / `signature`: preserved separately
+- `CanonicalMessage.forwarded_segments`: structured extraction of forwarded content (headers + nested body parts)
 - `CanonicalMessage.salutation` and `CanonicalMessage.disclaimer_blocks`: preserved when detected
 - `CanonicalMessage.contact_hints` / `signature_entities` / `attachment_hints` / `event_hints`: passthrough parser hints for backend enrichment pipelines
 
@@ -84,6 +85,13 @@ Export/render is done by `mailbox-parser-cli`. Ingest into the store is done by 
 - `signature` (optional)
 - `disclaimer` (optional)
 - `quoted` or `forwarded` (optional)
+
+When a `forwarded` block is found, `parse_rfc822()` also emits structured `forwarded_segments`:
+
+- Parsed forwarded headers (`from`, `to`, `cc`, `date`, `subject`, `message_id`)
+- Segmented forwarded body fields (`reply_text`, `salutation`, `signature`, `disclaimer_blocks`, `quoted_blocks`)
+- Nested forwarded segments (`nested`) when a forward contains another forward
+- Confidence/debug metadata (`parse_confidence`, `has_unparsed_tail`, `headers.raw_lines`)
 
 Detection is line-based and includes multilingual quote/header cues plus adaptive signature/disclaimer heuristics.
 

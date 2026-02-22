@@ -124,6 +124,71 @@ fn parse_inline_forwarded_message_id_from_body() {
 }
 
 #[test]
+fn parse_forwarded_segment_extracts_headers_and_clean_reply() {
+    let msg = concat!(
+        "From: Alice <alice@example.com>\n",
+        "To: Bob <bob@example.com>\n",
+        "Subject: Fwd: Reporting Interval\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "FYI\n\n",
+        "---- Forwarded message ----\n",
+        "From: Henry Lynam <henry@minfarmtech.com>\n",
+        "To: Thomas GUILLET <thomas.guillet@edgetech.fr>\n",
+        "Date: Fri, 18 Apr 2025 18:40:53 +0800\n",
+        "Subject: Re: Reporting Interval\n",
+        "\n",
+        "Hi Thomas,\n\n",
+        "Thanks for the reply.\n\n",
+        "Kind regards,\n",
+        "Henry\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert_eq!(parsed.forwarded_segments.len(), 1);
+    let seg = &parsed.forwarded_segments[0];
+    assert_eq!(seg.headers.subject.as_deref(), Some("Re: Reporting Interval"));
+    assert!(
+        seg.headers
+            .from
+            .iter()
+            .any(|a| a.address == "henry@minfarmtech.com")
+    );
+    assert!(seg.reply_text.contains("Thanks for the reply."));
+    assert!(!seg.reply_text.contains("Kind regards"));
+    assert!(seg.signature.is_some());
+}
+
+#[test]
+fn parse_forwarded_segment_recurses_nested_forward() {
+    let msg = concat!(
+        "From: A <a@example.com>\n",
+        "To: B <b@example.com>\n",
+        "Subject: Fwd: Outer\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "---- Forwarded message ----\n",
+        "From: Outer <outer@example.com>\n",
+        "Subject: Outer layer\n",
+        "\n",
+        "---- Forwarded message ----\n",
+        "From: Inner <inner@example.com>\n",
+        "Subject: Inner layer\n",
+        "\n",
+        "Inner body\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert_eq!(parsed.forwarded_segments.len(), 1);
+    assert_eq!(parsed.forwarded_segments[0].nested.len(), 1);
+    assert_eq!(
+        parsed.forwarded_segments[0].nested[0]
+            .headers
+            .subject
+            .as_deref(),
+        Some("Inner layer")
+    );
+}
+
+#[test]
 fn normalize_email_text_strips_common_unicode_junk() {
     let msg = "Subject: Hi\nFrom: A <a@x>\nTo: B <b@x>\nDate: Tue, 20 Jan 2026 12:34:56 +0000\nContent-Type: text/plain; charset=utf-8\n\nHello\u{034F}\u{200C}\u{2007}\u{FEFF}\u{00A0}World\n";
     let parsed = parse_rfc822(msg.as_bytes()).expect("parse");

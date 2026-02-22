@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     EmailBlockKind, ParsedAttachment, ParsedAttachmentHint, ParsedContactHint, ParsedEmail,
-    ParsedEventHint, ParsedForwardedMessage, ParsedSignatureEntities, ParsedThread,
+    ParsedEventHint, ParsedForwardedMessage, ParsedForwardedSegment, ParsedSignatureEntities, ParsedThread,
     ParsedThreadMessage, normalize_message_id, reply_text, segment_email_body,
 };
 
@@ -59,6 +59,8 @@ pub struct CanonicalMessage {
 
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub forwarded_messages: Vec<ParsedForwardedMessage>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub forwarded_segments: Vec<ParsedForwardedSegment>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -176,6 +178,7 @@ fn canonicalize_email_message(
         attachment_hints: email.attachment_hints.clone(),
         event_hints: email.event_hints.clone(),
         forwarded_messages: email.forwarded_messages.clone(),
+        forwarded_segments: email.forwarded_segments.clone(),
     }
 }
 

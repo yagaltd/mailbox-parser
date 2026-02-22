@@ -42,6 +42,14 @@ pub struct ParsedEmail {
     pub body_canonical: String,
     pub attachments: Vec<ParsedAttachment>,
     pub forwarded_messages: Vec<ParsedForwardedMessage>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub contact_hints: Vec<ParsedContactHint>,
+    #[serde(default, skip_serializing_if = "ParsedSignatureEntities::is_empty")]
+    pub signature_entities: ParsedSignatureEntities,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachment_hints: Vec<ParsedAttachmentHint>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub event_hints: Vec<ParsedEventHint>,
 
     #[serde(default)]
     pub raw_headers: std::collections::BTreeMap<String, String>,
@@ -106,6 +114,166 @@ pub struct ParsedForwardedMessage {
     pub date: Option<String>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum HintConfidence {
+    High,
+    Medium,
+    #[default]
+    Low,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ContactHintSource {
+    FromHeader,
+    ToHeader,
+    CcHeader,
+    BccHeader,
+    ReplyToHeader,
+    Salutation,
+    Signature,
+}
+impl Default for ContactHintSource {
+    fn default() -> Self {
+        Self::Signature
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ContactHintRole {
+    From,
+    To,
+    Cc,
+    Bcc,
+    ReplyTo,
+    Mentioned,
+}
+impl Default for ContactHintRole {
+    fn default() -> Self {
+        Self::Mentioned
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct ParsedContactHint {
+    pub name: Option<String>,
+    pub email: Option<String>,
+    pub phone: Option<String>,
+    pub source: ContactHintSource,
+    pub role: ContactHintRole,
+    #[serde(default)]
+    pub confidence: HintConfidence,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub company_domain: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link_key: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct ParsedSignatureEntities {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub emails: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub phones: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub urls: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub organization_lines: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub title_lines: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub address_lines: Vec<String>,
+    #[serde(default)]
+    pub is_partial: bool,
+}
+
+impl ParsedSignatureEntities {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.emails.is_empty()
+            && self.phones.is_empty()
+            && self.urls.is_empty()
+            && self.organization_lines.is_empty()
+            && self.title_lines.is_empty()
+            && self.address_lines.is_empty()
+            && !self.is_partial
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AttachmentSizeBucket {
+    Tiny,
+    Small,
+    Medium,
+    Large,
+}
+impl Default for AttachmentSizeBucket {
+    fn default() -> Self {
+        Self::Small
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct ParsedAttachmentHint {
+    pub sha256: String,
+    pub is_inline: bool,
+    pub is_probable_logo: bool,
+    pub is_tracking_pixel_like: bool,
+    pub size_bucket: AttachmentSizeBucket,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum EventHintKind {
+    Meeting,
+    Shipping,
+    Deadline,
+    Availability,
+    Generic,
+}
+impl Default for EventHintKind {
+    fn default() -> Self {
+        Self::Generic
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum EventMissingField {
+    Date,
+    Time,
+    Timezone,
+    Location,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct ParsedDateTimeCandidate {
+    pub raw: String,
+    #[serde(default)]
+    pub has_time: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct ParsedEventHint {
+    pub kind: EventHintKind,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub datetime_candidates: Vec<ParsedDateTimeCandidate>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub location_candidates: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub meeting_links: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub timezone_candidates: Vec<String>,
+    #[serde(default)]
+    pub is_complete: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub missing_fields: Vec<EventMissingField>,
+    #[serde(default)]
+    pub confidence: HintConfidence,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ParsedThreadMessage {
     pub message_key: String,
@@ -154,8 +322,12 @@ pub fn parse_rfc822(bytes: &[u8]) -> Result<ParsedEmail> {
     let body_canonical = build_canonical_body(body_text.as_deref(), body_html.as_deref());
 
     let (attachments, mut forwarded_messages) = collect_attachments_and_forwards(&message)?;
-    if !body_canonical.trim().is_empty() {
-        let blocks = crate::email_text::segment_email_body(&body_canonical);
+    let blocks = if body_canonical.trim().is_empty() {
+        Vec::new()
+    } else {
+        crate::email_text::segment_email_body(&body_canonical)
+    };
+    if !blocks.is_empty() {
         for id in crate::email_text::forwarded_message_ids(&body_canonical, &blocks) {
             let norm = normalize_message_id(&id);
             if norm.trim().is_empty() {
@@ -176,6 +348,22 @@ pub fn parse_rfc822(bytes: &[u8]) -> Result<ParsedEmail> {
         }
     }
 
+    let salutation = first_block_of_kind(&body_canonical, &blocks, crate::EmailBlockKind::Salutation);
+    let signature = first_block_of_kind(&body_canonical, &blocks, crate::EmailBlockKind::Signature);
+    let reply = crate::email_text::reply_text(&body_canonical, &blocks);
+    let signature_entities = extract_signature_entities(signature.as_deref());
+    let contact_hints = extract_contact_hints(
+        &from,
+        &to,
+        &cc,
+        &bcc,
+        &reply_to,
+        salutation.as_deref(),
+        &signature_entities,
+    );
+    let attachment_hints = derive_attachment_hints(&attachments);
+    let event_hints = extract_event_hints(subject.as_deref(), &reply);
+
     Ok(ParsedEmail {
         message_id,
         in_reply_to,
@@ -193,6 +381,10 @@ pub fn parse_rfc822(bytes: &[u8]) -> Result<ParsedEmail> {
         body_canonical,
         attachments,
         forwarded_messages,
+        contact_hints,
+        signature_entities,
+        attachment_hints,
+        event_hints,
         raw_headers,
     })
 }
@@ -720,6 +912,435 @@ fn extract_references(headers: &std::collections::BTreeMap<String, String>) -> V
         .map(|t| normalize_message_id(t))
         .filter(|t| !t.is_empty())
         .collect()
+}
+
+fn first_block_of_kind(
+    text: &str,
+    blocks: &[crate::EmailBlock],
+    kind: crate::EmailBlockKind,
+) -> Option<String> {
+    for b in blocks {
+        if b.kind != kind {
+            continue;
+        }
+        let s = text.get(b.byte_start..b.byte_end)?.trim();
+        if !s.is_empty() {
+            return Some(s.to_string());
+        }
+    }
+    None
+}
+
+fn normalize_name_like(s: &str) -> String {
+    s.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim()
+        .to_ascii_lowercase()
+}
+
+fn extract_email_candidates(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for token in text.split_whitespace() {
+        let t = token
+            .trim_matches(|c: char| {
+                c == '<'
+                    || c == '>'
+                    || c == '('
+                    || c == ')'
+                    || c == '['
+                    || c == ']'
+                    || c == ','
+                    || c == ';'
+                    || c == ':'
+                    || c == '"'
+                    || c == '\''
+            })
+            .to_ascii_lowercase();
+        if t.contains('@') && t.contains('.') {
+            let t = t.strip_prefix("mailto:").unwrap_or(&t);
+            let norm = t.trim_matches('.');
+            if !norm.is_empty() && !out.iter().any(|e| e == norm) {
+                out.push(norm.to_string());
+            }
+        }
+    }
+    out
+}
+
+fn extract_phone_candidates(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for token in text.split_whitespace() {
+        let digits: String = token.chars().filter(|c| c.is_ascii_digit()).collect();
+        if digits.len() >= 8 && digits.len() <= 15 && !out.iter().any(|d| d == &digits) {
+            out.push(digits);
+        }
+    }
+    out
+}
+
+fn extract_url_candidates(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for token in text.split_whitespace() {
+        let t = token
+            .trim_matches(|c: char| c == '<' || c == '>' || c == '(' || c == ')' || c == ',');
+        let lower = t.to_ascii_lowercase();
+        if (lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("www."))
+            && !out.iter().any(|u| u == t)
+        {
+            out.push(t.to_string());
+        }
+    }
+    out
+}
+
+fn derive_signature_line_buckets(sig: &str) -> (Vec<String>, Vec<String>, Vec<String>) {
+    let org_tokens = [
+        "inc", "llc", "corp", "company", "sas", "gmbh", "ltd", "sa", "sarl", "ag",
+        "technologies",
+    ];
+    let title_tokens = [
+        "engineer",
+        "manager",
+        "director",
+        "expert",
+        "responsable",
+        "technician",
+        "support",
+        "sales",
+        "consultant",
+    ];
+    let addr_tokens = [
+        "avenue", "street", "road", "blvd", "boulevard", "city", "france", "germany", "canada",
+        "usa",
+    ];
+
+    let mut org = Vec::new();
+    let mut title = Vec::new();
+    let mut addr = Vec::new();
+
+    for line in sig.lines() {
+        let l = line.trim();
+        if l.is_empty() {
+            continue;
+        }
+        let lower = l.to_ascii_lowercase();
+        if org_tokens.iter().any(|t| lower.contains(t)) && !org.iter().any(|v| v == l) {
+            org.push(l.to_string());
+        }
+        if title_tokens.iter().any(|t| lower.contains(t)) && !title.iter().any(|v| v == l) {
+            title.push(l.to_string());
+        }
+        let has_postal = l.chars().filter(|c| c.is_ascii_digit()).count() >= 4;
+        if (addr_tokens.iter().any(|t| lower.contains(t)) || has_postal)
+            && !addr.iter().any(|v| v == l)
+        {
+            addr.push(l.to_string());
+        }
+    }
+    (org, title, addr)
+}
+
+fn extract_signature_entities(signature: Option<&str>) -> ParsedSignatureEntities {
+    let Some(sig) = signature.map(str::trim).filter(|s| !s.is_empty()) else {
+        return ParsedSignatureEntities::default();
+    };
+    let emails = extract_email_candidates(sig);
+    let phones = extract_phone_candidates(sig);
+    let urls = extract_url_candidates(sig);
+    let (organization_lines, title_lines, address_lines) = derive_signature_line_buckets(sig);
+    ParsedSignatureEntities {
+        is_partial: emails.is_empty() && phones.is_empty(),
+        emails,
+        phones,
+        urls,
+        organization_lines,
+        title_lines,
+        address_lines,
+    }
+}
+
+fn email_domain(email: &str) -> Option<String> {
+    let (_, domain) = email.split_once('@')?;
+    let d = domain.trim().to_ascii_lowercase();
+    if d.is_empty() { None } else { Some(d) }
+}
+
+fn compute_link_key(name: Option<&str>, email: Option<&str>) -> Option<String> {
+    let n = name
+        .map(normalize_name_like)
+        .filter(|s| !s.is_empty())
+        .unwrap_or_default();
+    let d = email.and_then(email_domain).unwrap_or_default();
+    if n.is_empty() && d.is_empty() {
+        None
+    } else {
+        Some(format!("{n}|{d}"))
+    }
+}
+
+fn push_header_contact_hints(
+    out: &mut Vec<ParsedContactHint>,
+    list: &[EmailAddress],
+    source: ContactHintSource,
+    role: ContactHintRole,
+) {
+    for a in list {
+        let email = a.address.trim().to_ascii_lowercase();
+        if email.is_empty() {
+            continue;
+        }
+        out.push(ParsedContactHint {
+            name: a.name.clone(),
+            email: Some(email.clone()),
+            phone: None,
+            source: source.clone(),
+            role: role.clone(),
+            confidence: HintConfidence::High,
+            company_domain: email_domain(&email),
+            link_key: compute_link_key(a.name.as_deref(), Some(&email)),
+        });
+    }
+}
+
+fn extract_contact_hints(
+    from: &[EmailAddress],
+    to: &[EmailAddress],
+    cc: &[EmailAddress],
+    bcc: &[EmailAddress],
+    reply_to: &[EmailAddress],
+    salutation: Option<&str>,
+    signature_entities: &ParsedSignatureEntities,
+) -> Vec<ParsedContactHint> {
+    let mut out = Vec::new();
+    push_header_contact_hints(
+        &mut out,
+        from,
+        ContactHintSource::FromHeader,
+        ContactHintRole::From,
+    );
+    push_header_contact_hints(&mut out, to, ContactHintSource::ToHeader, ContactHintRole::To);
+    push_header_contact_hints(&mut out, cc, ContactHintSource::CcHeader, ContactHintRole::Cc);
+    push_header_contact_hints(
+        &mut out,
+        bcc,
+        ContactHintSource::BccHeader,
+        ContactHintRole::Bcc,
+    );
+    push_header_contact_hints(
+        &mut out,
+        reply_to,
+        ContactHintSource::ReplyToHeader,
+        ContactHintRole::ReplyTo,
+    );
+
+    if let Some(line) = salutation {
+        let n = line.trim().trim_end_matches(',').trim();
+        if !n.is_empty() {
+            out.push(ParsedContactHint {
+                name: Some(n.to_string()),
+                email: None,
+                phone: None,
+                source: ContactHintSource::Salutation,
+                role: ContactHintRole::Mentioned,
+                confidence: HintConfidence::Low,
+                company_domain: None,
+                link_key: compute_link_key(Some(n), None),
+            });
+        }
+    }
+
+    for email in &signature_entities.emails {
+        out.push(ParsedContactHint {
+            name: None,
+            email: Some(email.clone()),
+            phone: None,
+            source: ContactHintSource::Signature,
+            role: ContactHintRole::Mentioned,
+            confidence: HintConfidence::Medium,
+            company_domain: email_domain(email),
+            link_key: compute_link_key(None, Some(email)),
+        });
+    }
+    for phone in &signature_entities.phones {
+        out.push(ParsedContactHint {
+            name: None,
+            email: None,
+            phone: Some(phone.clone()),
+            source: ContactHintSource::Signature,
+            role: ContactHintRole::Mentioned,
+            confidence: HintConfidence::Low,
+            company_domain: None,
+            link_key: None,
+        });
+    }
+    out
+}
+
+fn derive_attachment_hints(attachments: &[ParsedAttachment]) -> Vec<ParsedAttachmentHint> {
+    let logo_tokens = ["logo", "signature", "icon", "linkedin", "twitter", "facebook"];
+    attachments
+        .iter()
+        .map(|a| {
+            let name = a.filename.as_deref().unwrap_or("").to_ascii_lowercase();
+            let inline = a.content_id.is_some()
+                || a.content_disposition
+                    .as_deref()
+                    .map(|d| d.eq_ignore_ascii_case("inline"))
+                    .unwrap_or(false);
+            let is_image = a.mime_type.to_ascii_lowercase().starts_with("image/");
+            let is_probable_logo = inline
+                && is_image
+                && a.size <= 40_000
+                && logo_tokens.iter().any(|t| name.contains(t));
+            let is_tracking_pixel_like = is_image && a.size <= 2_000;
+            let size_bucket = if a.size < 4_000 {
+                AttachmentSizeBucket::Tiny
+            } else if a.size < 64_000 {
+                AttachmentSizeBucket::Small
+            } else if a.size < 1_000_000 {
+                AttachmentSizeBucket::Medium
+            } else {
+                AttachmentSizeBucket::Large
+            };
+            ParsedAttachmentHint {
+                sha256: a.sha256.clone(),
+                is_inline: inline,
+                is_probable_logo,
+                is_tracking_pixel_like,
+                size_bucket,
+            }
+        })
+        .collect()
+}
+
+fn extract_event_hints(subject: Option<&str>, reply_text: &str) -> Vec<ParsedEventHint> {
+    let text = reply_text.trim();
+    if text.is_empty() {
+        return Vec::new();
+    }
+
+    let mut datetime_candidates = Vec::new();
+    let mut location_candidates = Vec::new();
+    let mut meeting_links = Vec::new();
+    let mut timezone_candidates = Vec::new();
+
+    let month_tokens = [
+        "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+    ];
+    let tz_tokens = ["utc", "gmt", "cet", "cest", "pst", "est"];
+    let meeting_hosts = [
+        "zoom.us",
+        "meet.google.com",
+        "teams.microsoft.com",
+        "webex.com",
+        "calendly.com",
+    ];
+    let location_tokens = ["avenue", "street", "road", "site", "venue", "office", "room"];
+
+    for line in text.lines() {
+        let l = line.trim();
+        if l.is_empty() {
+            continue;
+        }
+        let lower = l.to_ascii_lowercase();
+        let has_date_shape = lower.contains("20")
+            && (lower.contains('-') || lower.contains('/'))
+            && l.chars().any(|c| c.is_ascii_digit());
+        let has_month_word = month_tokens.iter().any(|m| lower.contains(m))
+            && l.chars().any(|c| c.is_ascii_digit());
+        let has_range = lower.contains(" - ") || lower.contains(" to ");
+        let has_time = lower.contains(':') && l.chars().any(|c| c.is_ascii_digit());
+        if has_date_shape || has_month_word || has_range {
+            datetime_candidates.push(ParsedDateTimeCandidate {
+                raw: l.to_string(),
+                has_time,
+            });
+        }
+        if tz_tokens.iter().any(|t| lower.contains(t))
+            || lower.contains("utc+")
+            || lower.contains("gmt+")
+            || lower.contains("utc-")
+            || lower.contains("gmt-")
+        {
+            timezone_candidates.push(l.to_string());
+        }
+        if meeting_hosts.iter().any(|h| lower.contains(h))
+            || lower.contains("zoom")
+            || lower.contains("teams")
+            || lower.contains("meeting link")
+        {
+            meeting_links.push(l.to_string());
+        }
+        if location_tokens.iter().any(|t| lower.contains(t))
+            || (l.chars().filter(|c| c.is_ascii_digit()).count() >= 4 && lower.contains("france"))
+        {
+            location_candidates.push(l.to_string());
+        }
+    }
+
+    let kind_source = format!(
+        "{}\n{}",
+        subject.unwrap_or_default().to_ascii_lowercase(),
+        text.to_ascii_lowercase()
+    );
+    let kind = if ["meeting", "call", "visit", "onboarding", "training"]
+        .iter()
+        .any(|k| kind_source.contains(k))
+    {
+        EventHintKind::Meeting
+    } else if ["ship", "shipment", "delivery"].iter().any(|k| kind_source.contains(k)) {
+        EventHintKind::Shipping
+    } else if ["deadline", "due"].iter().any(|k| kind_source.contains(k)) {
+        EventHintKind::Deadline
+    } else if ["available", "availability"].iter().any(|k| kind_source.contains(k)) {
+        EventHintKind::Availability
+    } else {
+        EventHintKind::Generic
+    };
+
+    if datetime_candidates.is_empty()
+        && meeting_links.is_empty()
+        && location_candidates.is_empty()
+        && timezone_candidates.is_empty()
+    {
+        return Vec::new();
+    }
+
+    let has_time = datetime_candidates.iter().any(|c| c.has_time);
+    let has_date = !datetime_candidates.is_empty();
+    let has_location_or_link = !location_candidates.is_empty() || !meeting_links.is_empty();
+    let has_tz = !timezone_candidates.is_empty();
+    let is_complete = has_date && has_location_or_link && (!has_time || has_tz);
+    let mut missing_fields = Vec::new();
+    if !has_date {
+        missing_fields.push(EventMissingField::Date);
+    }
+    if !has_location_or_link {
+        missing_fields.push(EventMissingField::Location);
+    }
+    if has_time && !has_tz {
+        missing_fields.push(EventMissingField::Timezone);
+    }
+
+    let confidence = if is_complete {
+        HintConfidence::High
+    } else if has_date || has_location_or_link {
+        HintConfidence::Medium
+    } else {
+        HintConfidence::Low
+    };
+
+    vec![ParsedEventHint {
+        kind,
+        datetime_candidates,
+        location_candidates,
+        meeting_links,
+        timezone_candidates,
+        is_complete,
+        missing_fields,
+        confidence,
+    }]
 }
 
 fn html_to_text(input: &str) -> String {

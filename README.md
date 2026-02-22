@@ -18,6 +18,11 @@ Rust library for:
 - `body_text` and `body_html` (when present)
 - `body_canonical` (a cleaned-up body intended for downstream processing)
 - Attachments (including inline parts) with `sha256` and (in-memory) `bytes`
+- Parser hints for downstream ingestion:
+  - `contact_hints` (header/salutation/signature entities)
+  - `signature_entities` (emails/phones/urls/org/title/address lines)
+  - `attachment_hints` (inline/logo/pixel-like + size bucket)
+  - `event_hints` (meeting/shipping/deadline/availability candidates + completeness)
 
 ```rust
 use mailbox_parser::parse_rfc822;
@@ -49,6 +54,7 @@ For a stable export/ingest format, you can convert `ParsedThread` → `Canonical
 - `CanonicalMessage.reply_text`: the top-level reply text (quoted history stripped)
 - `CanonicalMessage.quoted_blocks` / `forwarded_blocks` / `signature`: preserved separately
 - `CanonicalMessage.salutation` and `CanonicalMessage.disclaimer_blocks`: preserved when detected
+- `CanonicalMessage.contact_hints` / `signature_entities` / `attachment_hints` / `event_hints`: passthrough parser hints for backend enrichment pipelines
 
 ```rust
 use mailbox_parser::{canonicalize_threads, thread_messages};

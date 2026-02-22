@@ -234,3 +234,94 @@ fn parse_signature_detects_rgds_signoff() {
     let reply = reply_text(text, &blocks);
     assert_eq!(reply, "Can we schedule this next week?");
 }
+
+#[test]
+fn parse_extracts_contact_hints_and_signature_entities() {
+    let msg = concat!(
+        "From: Alice <alice@example.com>\n",
+        "To: Bob <bob@example.com>\n",
+        "Subject: Follow up\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Hi Bob,\n",
+        "\n",
+        "Please review the last update.\n",
+        "\n",
+        "Best regards,\n",
+        "Anna Mueller\n",
+        "Sales Manager\n",
+        "Acme GmbH\n",
+        "anna.mueller@example.de\n",
+        "+49 30 1234 5678\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+
+    assert!(
+        parsed
+            .contact_hints
+            .iter()
+            .any(|h| h.email.as_deref() == Some("alice@example.com"))
+    );
+    assert!(
+        parsed
+            .contact_hints
+            .iter()
+            .any(|h| h.email.as_deref() == Some("anna.mueller@example.de"))
+    );
+    assert!(
+        parsed
+            .signature_entities
+            .emails
+            .iter()
+            .any(|e| e == "anna.mueller@example.de")
+    );
+    assert!(!parsed.signature_entities.is_partial);
+}
+
+#[test]
+fn parse_attachment_hints_detect_inline_logo() {
+    let msg = concat!(
+        "From: Alice <alice@example.com>\n",
+        "To: Bob <bob@example.com>\n",
+        "Subject: logo\n",
+        "MIME-Version: 1.0\n",
+        "Content-Type: multipart/related; boundary=\"b\"\n",
+        "\n",
+        "--b\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "See logo.\n",
+        "--b\n",
+        "Content-Type: image/png\n",
+        "Content-Disposition: inline; filename=\"company-logo.png\"\n",
+        "Content-ID: <logo1@cid>\n",
+        "Content-Transfer-Encoding: base64\n",
+        "\n",
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/",
+        "PjB6+QAAAABJRU5ErkJggg==\n",
+        "--b--\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert_eq!(parsed.attachment_hints.len(), 1);
+    let hint = &parsed.attachment_hints[0];
+    assert!(hint.is_inline);
+    assert!(hint.is_probable_logo);
+}
+
+#[test]
+fn parse_event_hints_detect_complete_meeting() {
+    let msg = concat!(
+        "From: Alice <alice@example.com>\n",
+        "To: Bob <bob@example.com>\n",
+        "Subject: Meeting planning\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Let's meet on 2026-03-01 10:30 CET.\n",
+        "Join via https://zoom.us/j/123456\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert_eq!(parsed.event_hints.len(), 1);
+    let event = &parsed.event_hints[0];
+    assert!(event.is_complete);
+    assert!(event.missing_fields.is_empty());
+}

@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    EmailBlockKind, ParsedAttachment, ParsedEmail, ParsedForwardedMessage, ParsedThread,
+    EmailBlockKind, ParsedAttachment, ParsedAttachmentHint, ParsedContactHint, ParsedEmail,
+    ParsedEventHint, ParsedForwardedMessage, ParsedSignatureEntities, ParsedThread,
     ParsedThreadMessage, normalize_message_id, reply_text, segment_email_body,
 };
 
@@ -46,6 +47,15 @@ pub struct CanonicalMessage {
 
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub attachments: Vec<CanonicalAttachment>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub contact_hints: Vec<ParsedContactHint>,
+    #[serde(skip_serializing_if = "ParsedSignatureEntities::is_empty", default)]
+    pub signature_entities: ParsedSignatureEntities,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub attachment_hints: Vec<ParsedAttachmentHint>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub event_hints: Vec<ParsedEventHint>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub forwarded_messages: Vec<ParsedForwardedMessage>,
@@ -161,6 +171,10 @@ fn canonicalize_email_message(
         salutation,
         signature,
         attachments,
+        contact_hints: email.contact_hints.clone(),
+        signature_entities: email.signature_entities.clone(),
+        attachment_hints: email.attachment_hints.clone(),
+        event_hints: email.event_hints.clone(),
         forwarded_messages: email.forwarded_messages.clone(),
     }
 }

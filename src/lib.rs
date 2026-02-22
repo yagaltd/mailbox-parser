@@ -1426,6 +1426,10 @@ fn extract_url_candidates(text: &str) -> Vec<String> {
                 || c == '>'
                 || c == '('
                 || c == ')'
+                || c == '['
+                || c == ']'
+                || c == '{'
+                || c == '}'
                 || c == ','
                 || c == ';'
                 || c == '.'
@@ -1447,8 +1451,50 @@ fn extract_url_candidates(text: &str) -> Vec<String> {
         };
         !host.is_empty()
     }
-    fn canonicalize_url(token: &str) -> Option<String> {
-        let t = trim_url_token(token);
+    fn looks_like_prefixed(raw: &str) -> bool {
+        let lower = raw.to_ascii_lowercase();
+        lower.starts_with("http://")
+            || lower.starts_with("https://")
+            || lower.starts_with("www.")
+            || looks_like_host_path(raw)
+    }
+    fn canonicalize_url(raw: &str) -> Option<String> {
+        let mut t = trim_url_token(raw).trim();
+        if t.is_empty() {
+            return None;
+        }
+        if let Some(rbracket) = t.find(']') {
+            let after = t.get(rbracket + 1..)?.trim();
+            if !after.is_empty() && looks_like_prefixed(after) {
+                t = after;
+            }
+        }
+        if let Some(pos) = t.to_ascii_lowercase().find("<http") {
+            let inner = t.get(pos + 1..)?.trim();
+            if !inner.is_empty() {
+                t = inner;
+            }
+        } else if let Some(pos) = t.to_ascii_lowercase().find("<www.") {
+            let inner = t.get(pos + 1..)?.trim();
+            if !inner.is_empty() {
+                t = inner;
+            }
+        }
+        t = trim_url_token(t).trim();
+        if let Some(close) = t.find('>') {
+            let before = t.get(..close)?.trim();
+            if !before.is_empty() {
+                t = before;
+            }
+        }
+        if let Some(md_mid) = t.find("](") {
+            let inner = t.get(md_mid + 2..)?.trim();
+            let inner = inner.strip_suffix(')').unwrap_or(inner);
+            if !inner.is_empty() {
+                t = inner;
+            }
+        }
+        t = trim_url_token(t).trim();
         if t.is_empty() {
             return None;
         }
@@ -1467,12 +1513,60 @@ fn extract_url_candidates(text: &str) -> Vec<String> {
         while url.ends_with(['.', ',', ';', '!', '?', ')', ']']) {
             url.pop();
         }
-        if url.is_empty() { None } else { Some(url) }
+        if url.is_empty() {
+            return None;
+        }
+        let (host, _) = split_url_host_path(&url)?;
+        if host.is_empty()
+            || host.contains('[')
+            || host.contains(']')
+            || host.contains('<')
+            || host.contains('>')
+            || host.contains(' ')
+            || !host.contains('.')
+        {
+            return None;
+        }
+        Some(url)
+    }
+
+    fn push_candidate_from_token(token: &str, out: &mut Vec<String>) {
+        let t = token.trim();
+        if t.is_empty() {
+            return;
+        }
+        out.push(t.to_string());
+        if let Some(start) = t.find("](") {
+            if let Some(end_rel) = t.get(start + 2..).and_then(|s| s.find(')')) {
+                if let Some(inner) = t.get(start + 2..start + 2 + end_rel) {
+                    out.push(inner.to_string());
+                }
+            }
+        }
+        if let Some(pos) = t.to_ascii_lowercase().find("<http") {
+            if let Some(inner) = t.get(pos + 1..) {
+                out.push(inner.to_string());
+            }
+        }
+        if let Some(pos) = t.to_ascii_lowercase().find("<www.") {
+            if let Some(inner) = t.get(pos + 1..) {
+                out.push(inner.to_string());
+            }
+        }
+        if let Some(rbracket) = t.find(']') {
+            if let Some(after) = t.get(rbracket + 1..) {
+                out.push(after.to_string());
+            }
+        }
     }
 
     let mut out = Vec::new();
+    let mut raw_candidates = Vec::new();
     for token in text.split_whitespace() {
-        if let Some(url) = canonicalize_url(token) {
+        push_candidate_from_token(token, &mut raw_candidates);
+    }
+    for raw in raw_candidates {
+        if let Some(url) = canonicalize_url(&raw) {
             if !out.iter().any(|u| u == &url) {
                 out.push(url);
             }

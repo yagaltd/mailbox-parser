@@ -106,6 +106,7 @@ Notable heuristics:
 - Signature extraction now uses contact-card signals (email/phone/url/cid/address lines) so long corporate signatures are still split correctly even when the sign-off is far from the end of the message.
 - Forwarded header parsing unfolds multiline `To/Cc` values and tokenizes recipients safely, avoiding merged-address artifacts in forwarded segments.
 - Signature URLs are classified into profile types (for example `linkedin_company`, `linkedin_person`, `twitter_x`, `website`) and emitted as `contact_hints` with confidence-based linkage metadata when strong domain/name signals exist.
+- Signature URL normalization handles wrapped forms (for example `[label](url)`, `label<url>`, `[n]url`) before classification to avoid malformed hint URLs.
 
 ### Event hint model
 

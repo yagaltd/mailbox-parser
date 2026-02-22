@@ -598,6 +598,46 @@ fn parse_contact_hints_keeps_ambiguous_urls_unlinked() {
 }
 
 #[test]
+fn parse_contact_hints_normalizes_wrapped_signature_urls() {
+    let msg = concat!(
+        "From: Thomas GUILLET <thomas.guillet@edgetech.fr>\n",
+        "To: Support <support@sensa.io>\n",
+        "Subject: signature wrapped urls\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Best regards,\n",
+        "Thomas GUILLET\n",
+        "[Logo]<https://www.wi6labs.com/>\n",
+        "Assistance/Support<https://support.wi6labs.net/>\n",
+        "www.tcb.gr<http://www.tcb.gr/>\n",
+        "[2]https://otrs.example.com/customer.pl?Action=CustomerTicketZoom&TicketID=31017\n",
+        "[Portal](https://book.sensa.io/#/customer/thomas)\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    let urls: Vec<String> = parsed
+        .contact_hints
+        .iter()
+        .filter_map(|h| h.url.clone())
+        .collect();
+    assert!(urls.iter().any(|u| u == "https://www.wi6labs.com/"));
+    assert!(urls.iter().any(|u| u == "https://support.wi6labs.net/"));
+    assert!(urls.iter().any(|u| u == "http://www.tcb.gr/"));
+    assert!(
+        urls.iter()
+            .any(|u| u == "https://otrs.example.com/customer.pl?Action=CustomerTicketZoom&TicketID=31017")
+    );
+    assert!(
+        urls.iter()
+            .any(|u| u == "https://book.sensa.io/#/customer/thomas")
+    );
+    assert!(
+        !urls
+            .iter()
+            .any(|u| u.contains('[') || u.contains(']') || u.contains('<') || u.contains('>'))
+    );
+}
+
+#[test]
 fn parse_attachment_hints_detect_inline_logo() {
     let msg = concat!(
         "From: Alice <alice@example.com>\n",

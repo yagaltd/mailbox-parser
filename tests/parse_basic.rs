@@ -848,6 +848,34 @@ fn parse_event_hints_prefers_shipping_when_pickup_waybill_and_call_present() {
 }
 
 #[test]
+fn parse_event_hints_ignores_measurement_unit_noise_lines() {
+    let msg = concat!(
+        "From: Alice <alice@example.com>\n",
+        "To: Bob <bob@example.com>\n",
+        "Subject: Site visit planning\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "We have design new mounting bracket 3mm thickness to make is more rigid and 2 differents formats.\n",
+        "Does 16-18 April work for you?\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert_eq!(parsed.event_hints.len(), 1);
+    let event = &parsed.event_hints[0];
+    assert!(
+        !event
+            .datetime_candidates
+            .iter()
+            .any(|d| d.raw.contains("3mm thickness"))
+    );
+    assert!(
+        event
+            .datetime_candidates
+            .iter()
+            .any(|d| d.raw.contains("16-18 April"))
+    );
+}
+
+#[test]
 fn signature_extracts_terminal_best_regards_without_contact_card() {
     let text = "Please check this issue with LoRa decoding.\n\nI will test again after lunch.\n\nBest regards,";
     let blocks = segment_email_body(text);

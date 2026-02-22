@@ -2316,6 +2316,24 @@ fn extract_event_hints(subject: Option<&str>, reply_text: &str) -> Vec<ParsedEve
             || has_month_range(line)
             || has_weekday_and_date(line)
     };
+    let has_measurement_unit_noise = |line: &str| -> bool {
+        const UNITS: &[&str] = &[
+            "mm", "cm", "m", "km", "kg", "g", "mg", "lb", "lbs", "oz", "ml", "l", "bar", "psi",
+            "v", "kv", "ma", "a", "w", "kw", "db", "hz", "khz", "mhz", "ghz", "c", "f",
+        ];
+        line.split_whitespace().any(|tok| {
+            let t = clean_token(tok).to_ascii_lowercase();
+            if t.len() < 3 {
+                return false;
+            }
+            let digit_prefix_len = t.chars().take_while(|c| c.is_ascii_digit()).count();
+            if digit_prefix_len == 0 || digit_prefix_len >= t.len() {
+                return false;
+            }
+            let suffix = &t[digit_prefix_len..];
+            UNITS.iter().any(|u| suffix == *u)
+        })
+    };
     let extract_meeting_link = |line: &str| -> Option<String> {
         for tok in line.split_whitespace() {
             let t = clean_token(tok);
@@ -2354,7 +2372,13 @@ fn extract_event_hints(subject: Option<&str>, reply_text: &str) -> Vec<ParsedEve
             continue;
         }
         let has_time = is_time_like(l);
-        if has_strong_date_anchor(l) {
+        let has_date_anchor = has_strong_date_anchor(l);
+        let has_explicit_date_shape = l.split_whitespace().any(is_numeric_date_token)
+            || has_month_range(l)
+            || has_weekday_and_date(l);
+        if has_date_anchor
+            && !(has_measurement_unit_noise(l) && !has_time && !has_explicit_date_shape)
+        {
             datetime_candidates.push(ParsedDateTimeCandidate {
                 raw: l.to_string(),
                 has_time,

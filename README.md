@@ -90,6 +90,7 @@ Detection is line-based and includes multilingual quote/header cues plus adaptiv
 Notable heuristics:
 
 - Outlook-style header bundles are recognized across multiple locales (for example `From:/Sent:/...`, `Von:/Gesendet:/...`, `De :/Envoyé :/...`).
+- Outlook-style header bundles are recognized across multiple locales (for example `From:/Sent:/...`, `Von:/Gesendet:/...`, `De :/Envoyé :/...`, `De:/Enviado el:/Para:/Asunto:`).
 - Dashed quote separators like `---- on ... wrote ----` are treated as quoted-history boundaries.
 - Mixed-language sign-offs like `Freundliche Grüße / Best regards` and short forms like `Rgds` are treated as signature cues.
 - Additional strict short sign-offs are supported (`thank you`, `many thanks`, `merci`, `a+`, `cheers`) while avoiding sentence-level false positives.
@@ -102,6 +103,7 @@ Notable heuristics:
 - A hint is emitted only when a strong date anchor is detected (`YYYY-MM-DD`, numeric date, month+day, weekday+date, or month date ranges like `16-18 April`).
 - Meeting links are detected from URL host allowlists (for example `zoom.us`, `meet.google.com`, `teams.microsoft.com`) rather than generic words.
 - Timezones require explicit tokens/offsets (`UTC+`, `GMT-`, `CET`, etc.), avoiding substring false positives.
+- Header metadata lines (`From:`, `Sent:`, `Enviado el:`, `Asunto:`, etc.) are ignored before event extraction to reduce quote/header contamination.
 
 ### V3 email ingest/chunking flow
 

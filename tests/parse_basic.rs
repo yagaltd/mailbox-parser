@@ -208,6 +208,16 @@ fn parse_reply_strips_fr_outlook_header_bundle_with_colon_space() {
 }
 
 #[test]
+fn parse_reply_strips_es_outlook_header_bundle() {
+    let text = "Hola,\n\nGracias por el seguimiento.\n\nSaludos,\nCarlos\n\nDe: EDGE TECHNOLOGIES <support@example.com>\nEnviado el: jueves, 24 de octubre de 2024 20:28\nPara: Carlos <carlos@example.com>\nAsunto: Re: Contact Form Request\n\nMensaje anterior";
+    let blocks = segment_email_body(text);
+    let reply = reply_text(text, &blocks);
+    assert!(reply.contains("Gracias por el seguimiento."));
+    assert!(!reply.contains("Enviado el: jueves"));
+    assert!(!reply.contains("Asunto: Re: Contact Form Request"));
+}
+
+#[test]
 fn parse_reply_strips_dashed_on_wrote_marker() {
     let text = "Reply body\n\n---- on Thu, 18 Dec 2025 16:40:44 +0700 Thomas <t@x> wrote ----\n> quoted";
     let blocks = segment_email_body(text);
@@ -394,4 +404,21 @@ fn parse_event_hints_detects_date_range_with_month() {
             .iter()
             .any(|d| d.raw.contains("16-18 April"))
     );
+}
+
+#[test]
+fn parse_event_hints_ignores_header_bundle_lines() {
+    let msg = concat!(
+        "From: Alice <alice@example.com>\n",
+        "To: Bob <bob@example.com>\n",
+        "Subject: Re: Contact Form Request\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Enviado el: jueves, 24 de octubre de 2024 20:28\n",
+        "Asunto: Re: Contact Form Request\n",
+        "From: support@example.com\n",
+        "Thanks for your note.\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert!(parsed.event_hints.is_empty());
 }

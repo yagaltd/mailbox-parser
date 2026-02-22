@@ -1263,6 +1263,24 @@ fn extract_event_hints(subject: Option<&str>, reply_text: &str) -> Vec<ParsedEve
         "webex.com",
         "calendly.com",
     ];
+    let header_prefixes = [
+        "from:",
+        "sent:",
+        "to:",
+        "cc:",
+        "subject:",
+        "message-id:",
+        "de:",
+        "para:",
+        "asunto:",
+        "enviado:",
+        "enviado el:",
+        "envoyé:",
+        "objet:",
+        "von:",
+        "gesendet:",
+        "betreff:",
+    ];
     let location_tokens = [
         "avenue",
         "street",
@@ -1400,6 +1418,9 @@ fn extract_event_hints(subject: Option<&str>, reply_text: &str) -> Vec<ParsedEve
             continue;
         }
         let lower = l.to_ascii_lowercase();
+        if header_prefixes.iter().any(|p| lower.starts_with(p)) {
+            continue;
+        }
         let has_time = is_time_like(l);
         if has_strong_date_anchor(l) {
             datetime_candidates.push(ParsedDateTimeCandidate {

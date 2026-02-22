@@ -2384,13 +2384,41 @@ fn extract_event_hints(subject: Option<&str>, reply_text: &str) -> Vec<ParsedEve
         subject.unwrap_or_default().to_ascii_lowercase(),
         text.to_ascii_lowercase()
     );
-    let kind = if ["meeting", "call", "visit", "onboarding", "training"]
-        .iter()
-        .any(|k| kind_source.contains(k))
-    {
-        EventHintKind::Meeting
-    } else if ["ship", "shipment", "delivery"].iter().any(|k| kind_source.contains(k)) {
+    let has_shipping_intent = [
+        "ship",
+        "shipment",
+        "delivery",
+        "pickup",
+        "pick up",
+        "waybill",
+        "air waybill",
+        "courier",
+        "tracking",
+        "label",
+        "dhl",
+        "fedex",
+        "ups",
+    ]
+    .iter()
+    .any(|k| kind_source.contains(k));
+    let has_meeting_intent = [
+        "meeting",
+        "meet ",
+        "visit",
+        "onboarding",
+        "training",
+        "zoom",
+        "teams",
+        "webex",
+        "calendly",
+    ]
+    .iter()
+    .any(|k| kind_source.contains(k));
+
+    let kind = if has_shipping_intent {
         EventHintKind::Shipping
+    } else if has_meeting_intent {
+        EventHintKind::Meeting
     } else if ["deadline", "due"].iter().any(|k| kind_source.contains(k)) {
         EventHintKind::Deadline
     } else if ["available", "availability"].iter().any(|k| kind_source.contains(k)) {

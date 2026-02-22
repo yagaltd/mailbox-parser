@@ -685,6 +685,8 @@ fn parse_event_hints_detect_complete_meeting() {
         "Join via https://zoom.us/j/123456\n",
     );
     let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    println!("REPLY={}", parsed.body_canonical);
+    println!("EVENTS={:?}", parsed.event_hints);
     assert_eq!(parsed.event_hints.len(), 1);
     let event = &parsed.event_hints[0];
     assert!(event.is_complete);
@@ -821,6 +823,28 @@ fn parse_event_hints_ignores_header_bundle_lines() {
     );
     let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
     assert!(parsed.event_hints.is_empty());
+}
+
+#[test]
+fn parse_event_hints_prefers_shipping_when_pickup_waybill_and_call_present() {
+    let msg = concat!(
+        "From: Ops <ops@example.com>\n",
+        "To: Vendor <vendor@example.com>\n",
+        "Subject: Re: RTD specification pickup\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Hi team,\n",
+        "\n",
+        "Please schedule pickup on 2026-02-28 10:30 CET.\n",
+        "Please call the courier in the morning and confirm waybill number 2880126981.\n",
+        "\n",
+        "Best regards,\n",
+        "Ops\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert_eq!(parsed.event_hints.len(), 1);
+    let event = &parsed.event_hints[0];
+    assert_eq!(event.kind, mailbox_parser::EventHintKind::Shipping);
 }
 
 #[test]

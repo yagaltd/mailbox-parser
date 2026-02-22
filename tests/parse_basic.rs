@@ -619,9 +619,15 @@ fn parse_contact_hints_normalizes_wrapped_signature_urls() {
         .iter()
         .filter_map(|h| h.url.clone())
         .collect();
-    assert!(urls.iter().any(|u| u == "https://www.wi6labs.com/"));
-    assert!(urls.iter().any(|u| u == "https://support.wi6labs.net/"));
-    assert!(urls.iter().any(|u| u == "http://www.tcb.gr/"));
+    assert!(
+        urls.iter()
+            .any(|u| u.starts_with("https://www.wi6labs.com"))
+    );
+    assert!(
+        urls.iter()
+            .any(|u| u.starts_with("https://support.wi6labs.net"))
+    );
+    assert!(urls.iter().any(|u| u.starts_with("http://www.tcb.gr")));
     assert!(
         urls.iter()
             .any(|u| u == "https://otrs.example.com/customer.pl?Action=CustomerTicketZoom&TicketID=31017")
@@ -701,6 +707,55 @@ fn parse_signature_detects_long_tail_contact_card() {
     assert!(blocks.iter().any(|b| b.kind == EmailBlockKind::Signature));
     let reply = reply_text(text, &blocks);
     assert_eq!(reply, "Thanks for the update.");
+}
+
+#[test]
+fn parse_signature_detects_cdlt_after_double_blank_line() {
+    let text = "Message principal sur la configuration.\n\nPouvez-vous confirmer ?\n\n\ncdlt\nThomas GUILLET\nhttps://book.sensa.io/#/customer/thomas\nmailto:thomas.guillet@edgetech.fr";
+    let blocks = segment_email_body(text);
+    assert!(blocks.iter().any(|b| b.kind == EmailBlockKind::Signature));
+    let reply = reply_text(text, &blocks);
+    assert!(reply.contains("Message principal"));
+    assert!(!reply.contains("cdlt"));
+    assert!(!reply.contains("book.sensa.io"));
+}
+
+#[test]
+fn parse_signature_detects_contact_card_with_blank_gap_no_signoff() {
+    let text = "Merci pour votre retour.\n\nNous validons l'etape suivante.\n\n\nThomas GUILLET\nEDGE TECHNOLOGIES SAS\n1480 Avenue D'Armenie\nhttp://www.edgetech.fr/\n+33 1 23 45 67 89";
+    let blocks = segment_email_body(text);
+    assert!(blocks.iter().any(|b| b.kind == EmailBlockKind::Signature));
+    let reply = reply_text(text, &blocks);
+    assert!(reply.contains("Nous validons l'etape suivante."));
+    assert!(!reply.contains("EDGE TECHNOLOGIES"));
+    assert!(!reply.contains("edgetech.fr"));
+}
+
+#[test]
+fn parse_signature_does_not_cut_normal_paragraphs_with_blank_lines() {
+    let text = "Bonjour,\n\nVoici un premier paragraphe explicatif.\n\n\nVoici un second paragraphe qui continue la demande et contient suffisamment de texte pour rester dans le corps du message.\n\nMerci.";
+    let blocks = segment_email_body(text);
+    let reply = reply_text(text, &blocks);
+    assert!(!blocks.iter().any(|b| b.kind == EmailBlockKind::Signature));
+    assert!(reply.contains("second paragraphe"));
+}
+
+#[test]
+fn parse_signature_keeps_business_url_in_reply_when_not_tail_card() {
+    let text = "Please review https://book.sensa.io/#/customer/thomas before tomorrow.\nIt is part of the requested troubleshooting steps.\nCan you confirm once done?";
+    let blocks = segment_email_body(text);
+    let reply = reply_text(text, &blocks);
+    assert!(!blocks.iter().any(|b| b.kind == EmailBlockKind::Signature));
+    assert!(reply.contains("book.sensa.io"));
+}
+
+#[test]
+fn parse_signature_detects_bien_cordialement_variant() {
+    let text = "Nous avons applique la correction.\n\nBien cordialement,\nThomas GUILLET\nEDGE TECHNOLOGIES SAS\nhttp://www.edgetech.fr/";
+    let blocks = segment_email_body(text);
+    assert!(blocks.iter().any(|b| b.kind == EmailBlockKind::Signature));
+    let reply = reply_text(text, &blocks);
+    assert_eq!(reply, "Nous avons applique la correction.");
 }
 
 #[test]

@@ -362,10 +362,13 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
         "best regards",
         "kind regards",
         "regards",
+        "regards,",
         "rgds",
+        "cdlt",
         "thanks",
         "thank you",
         "many thanks",
+        "thanks and regards",
         "merci",
         "merci beaucoup",
         "a+",
@@ -375,6 +378,7 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
         "freundliche grüße / best regards",
         "viele grüße",
         "cordialement",
+        "bien cordialement",
         "bien à vous",
         "saludos",
         "un saludo",
@@ -555,6 +559,9 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
     let tail_scan_take = non_empty_before_quote.len().min(60);
     let tail_start_idx = non_empty_before_quote.len().saturating_sub(tail_scan_take);
     let is_signature_cue_line = |core: &str| {
+        let core = core
+            .trim_end_matches(|c: char| c == ',' || c == '.' || c == ';' || c == ':' || c == '!')
+            .trim();
         const STRICT_SIGNOFF_CUES: &[&str] = &[
             "thanks",
             "thank you",
@@ -563,6 +570,7 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
             "merci beaucoup",
             "a+",
             "cheers",
+            "cdlt",
         ];
         SIGNATURE_CUES.iter().any(|c| {
             if STRICT_SIGNOFF_CUES.iter().any(|s| s == c) {
@@ -579,6 +587,32 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
     };
     let mut signature_pos: Option<usize> = None;
 
+    let has_strong_contact_marker = |line: &str| has_email_like(line) || has_phone_like(line) || has_url_like(line);
+    let has_soft_contact_marker =
+        |line: &str| has_address_marker(line) || has_org_or_title_marker(line) || has_cid_or_image_marker(line);
+    let blank_gap_before_pos = |pos: usize| -> usize {
+        if pos == 0 {
+            return 0;
+        }
+        let (idx, _, _) = non_empty_before_quote[pos];
+        let (prev_idx, _, _) = non_empty_before_quote[pos - 1];
+        idx.saturating_sub(prev_idx + 1)
+    };
+    let looks_like_body_continuation = |line: &str| -> bool {
+        let t = line.trim();
+        if t.len() < 48 {
+            return false;
+        }
+        let ends_sentence = t.ends_with('.') || t.ends_with('!') || t.ends_with('?') || t.ends_with(':');
+        let has_many_words = t.split_whitespace().count() >= 8;
+        let starts_upper = t
+            .chars()
+            .next()
+            .map(|c| c.is_ascii_uppercase())
+            .unwrap_or(false);
+        ends_sentence && has_many_words && starts_upper
+    };
+
     for pos in (tail_start_idx..non_empty_before_quote.len()).rev() {
         let (_idx, s, e) = non_empty_before_quote[pos];
         let t = get_line((s, e)).trim();
@@ -589,33 +623,65 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
         {
             disclaimer_start = Some(s);
         }
+        let mut score = 0i32;
+        let mut strong_evidence = false;
+        let mut has_contact_marker = false;
+
         if t == "--" || t == "-- " {
-            signature_pos = Some(pos);
-            break;
+            score += 3;
+            strong_evidence = true;
         }
         if MOBILE_SIGNATURE_CUES.iter().any(|c| core.starts_with(c)) {
-            signature_pos = Some(pos);
-            break;
+            score += 3;
+            strong_evidence = true;
         }
         if is_signature_cue_line(&core) {
-            let mut tail_score = 0usize;
-            let mut next_has_name = false;
-            let end = (pos + 13).min(non_empty_before_quote.len());
-            for next in (pos + 1)..end {
-                let (_j, ns, ne) = non_empty_before_quote[next];
-                let nt = get_line((ns, ne)).trim();
-                if nt.is_empty() {
-                    continue;
-                }
-                tail_score += signature_contact_score(nt);
-                if next <= pos + 2 && looks_like_name_line(nt) {
-                    next_has_name = true;
-                }
+            score += 3;
+            strong_evidence = true;
+        }
+        if blank_gap_before_pos(pos) >= 2 {
+            score += 2;
+        }
+
+        let end = (pos + 8).min(non_empty_before_quote.len());
+        let mut next_has_name = false;
+        for next in (pos + 1)..end {
+            let (_j, ns, ne) = non_empty_before_quote[next];
+            let nt = get_line((ns, ne)).trim();
+            if nt.is_empty() {
+                continue;
             }
-            if tail_score >= 2 || next_has_name {
-                signature_pos = Some(pos);
-                break;
+            if has_strong_contact_marker(nt) {
+                has_contact_marker = true;
+                strong_evidence = true;
+                score += 2;
+            } else if has_soft_contact_marker(nt) {
+                score += 1;
             }
+            if next <= pos + 2 && looks_like_name_line(nt) {
+                next_has_name = true;
+                score += 1;
+            }
+        }
+
+        if !has_contact_marker && looks_like_body_continuation(t) {
+            score -= 3;
+        }
+        if !strong_evidence && !next_has_name {
+            score -= 2;
+        }
+
+        // Avoid clipping short tails that look like body text.
+        let tail_lines = non_empty_before_quote.len().saturating_sub(pos);
+        if tail_lines < 3 && !is_signature_cue_line(&core) {
+            score -= 2;
+        }
+
+        let explicit_signoff_candidate = is_signature_cue_line(&core)
+            && (next_has_name || has_contact_marker || blank_gap_before_pos(pos) >= 2);
+        if explicit_signoff_candidate || (score >= 4 && strong_evidence) {
+            signature_pos = Some(pos);
+            break;
         }
     }
 
@@ -624,6 +690,7 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
         let mut block_start_pos: Option<usize> = None;
         let mut block_score = 0usize;
         let mut block_lines = 0usize;
+        let mut has_strong_marker = false;
         for pos in (tail_start_idx..non_empty_before_quote.len()).rev() {
             let (_idx, s, e) = non_empty_before_quote[pos];
             let t = get_line((s, e)).trim();
@@ -634,6 +701,9 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
                 block_start_pos = Some(pos);
                 block_score += score;
                 block_lines += 1;
+                if has_strong_contact_marker(t) {
+                    has_strong_marker = true;
+                }
                 continue;
             }
             if block_start_pos.is_some() {
@@ -641,7 +711,12 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
             }
         }
         if block_score >= 3 && block_lines >= 3 {
-            signature_pos = block_start_pos;
+            if let Some(start_pos) = block_start_pos {
+                let has_gap = blank_gap_before_pos(start_pos) >= 1;
+                if has_gap || has_strong_marker {
+                    signature_pos = Some(start_pos);
+                }
+            }
         }
     }
 
@@ -651,7 +726,13 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
             let (_pidx, ps, pe) = non_empty_before_quote[pos - 1];
             let prev = get_line((ps, pe)).trim();
             let prev_core = line_core(prev);
-            if is_signature_cue_line(&prev_core) || looks_like_name_line(prev) {
+            let prev_supportive =
+                signature_contact_score(prev) > 0 || prev_core.contains("[image]") || prev_core == "--";
+            if is_signature_cue_line(&prev_core)
+                || looks_like_name_line(prev)
+                || prev_supportive
+                || prev_core.starts_with("always here to help")
+            {
                 pos -= 1;
                 continue;
             }

@@ -350,6 +350,16 @@ event_deadline_patterns:
 event_availability_patterns:
   - pattern: available
   - pattern: availability
+  - pattern: now live
+  - pattern: now available
+  - pattern: disponible
+  - pattern: maintenant disponible
+  - pattern: ya disponible
+  - pattern: jetzt verfügbar
+  - pattern: ora disponibile
+  - pattern: nu beschikbaar
+  - pattern: dostępne
+  - pattern: juz dostępne
 
 event_reservation_intent_patterns:
   - pattern: reservation
@@ -419,3 +429,28 @@ event_marketing_list_noise_patterns:
   - pattern: strategy
   - pattern: strategies
   - pattern: guide
+  - pattern: trending
+  - pattern: what’s trending
+  - pattern: what's trending
+  - pattern: now live
+  - pattern: launch
+  - pattern: launches
+  - pattern: upgrade
+  - pattern: conseils
+  - pattern: astuces
+  - pattern: tendances
+  - pattern: disponible maintenant
+  - pattern: lanzamiento
+  - pattern: consejos
+  - pattern: tendencias
+  - pattern: ya disponible
+  - pattern: tipps
+  - pattern: trends
+  - pattern: jetzt verfügbar
+  - pattern: consigli
+  - pattern: tendenze
+  - pattern: ora disponibile
+  - pattern: nu beschikbaar
+  - pattern: porady
+  - pattern: trendy
+  - pattern: juz dostępne

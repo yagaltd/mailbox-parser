@@ -1983,6 +1983,26 @@ fn parse_salutation_name(line: &str) -> Option<String> {
         "dzień dobry",
         "witam",
     ];
+    const SALUTATION_TAIL_MARKERS: &[&str] = &[
+        " thank ",
+        " thanks ",
+        " merci ",
+        " gracias ",
+        " danke ",
+        " grazie ",
+        " dank ",
+        " dziękuj",
+        " please ",
+        " veuillez ",
+        " por favor ",
+        " bitte ",
+        " per favore ",
+        " alstublieft ",
+        " proszę ",
+        " transaction id",
+        " order id",
+        " confirmation id",
+    ];
     let mut trimmed = line.trim();
     if trimmed.is_empty() {
         return None;
@@ -2008,7 +2028,22 @@ fn parse_salutation_name(line: &str) -> Option<String> {
         }
         break;
     }
-    let cleaned = trimmed
+    let mut candidate = trimmed;
+    if let Some(pos) = candidate.find(',') {
+        candidate = &candidate[..pos];
+    } else if let Some(pos) = candidate.find(';') {
+        candidate = &candidate[..pos];
+    } else {
+        let lower = format!(" {} ", candidate.to_ascii_lowercase());
+        for marker in SALUTATION_TAIL_MARKERS {
+            if let Some(pos) = lower.find(marker) {
+                let cut = pos.saturating_sub(1);
+                candidate = candidate.get(..cut).unwrap_or(candidate);
+                break;
+            }
+        }
+    }
+    let cleaned = candidate
         .trim()
         .trim_end_matches(|c: char| {
             c.is_ascii_whitespace() || matches!(c, ',' | '.' | ';' | ':' | '!' | '?')
@@ -3056,6 +3091,14 @@ fn extract_event_hints(
         let lower = after_number.to_ascii_lowercase();
         lexicon.has_event_marketing_list_noise(&lower)
     };
+    let is_marketing_bullet_line = |line: &str| -> bool {
+        let l = line.trim_start();
+        if !(l.starts_with("* ") || l.starts_with("- ")) {
+            return false;
+        }
+        let lower = l.to_ascii_lowercase();
+        lexicon.has_event_marketing_list_noise(&lower)
+    };
     let is_numbered_list_item = |line: &str| -> bool {
         let l = line.trim_start_matches(['#', '-', '*', ' ']).trim_start();
         if let Some(pos) = l.find(". ") {
@@ -3102,7 +3145,8 @@ fn extract_event_hints(
             && !has_explicit_date_shape
             && (looks_like_numbered_marketing_line(l)
                 || is_marketing_list_heading(l)
-                || (marketing_list_block_countdown > 0 && is_numbered_list_item(l)));
+                || (marketing_list_block_countdown > 0 && is_numbered_list_item(l))
+                || is_marketing_bullet_line(l));
         if has_date_anchor
             && !likely_noise_prose
             && !is_marketing_numbered_list_noise
@@ -3153,6 +3197,14 @@ fn extract_event_hints(
     let has_short_structured_datetime = datetime_candidates
         .iter()
         .any(|c| c.has_time || c.raw.len() <= 96);
+    let has_explicit_schedule_anchor = text.lines().any(|line| {
+        let l = line.trim();
+        if l.is_empty() {
+            return false;
+        }
+        is_time_like(l) || l.split_whitespace().any(is_numeric_date_token) || has_month_range(l)
+            || has_weekday_and_date(l)
+    });
     let allow_shipping = if is_news_like {
         has_shipping_intent && has_hard_shipping_structure && has_short_structured_datetime
     } else {
@@ -3175,7 +3227,9 @@ fn extract_event_hints(
         EventHintKind::Reservation
     } else if lexicon.has_event_deadline_signal(&kind_source) && has_short_structured_datetime {
         EventHintKind::Deadline
-    } else if lexicon.has_event_availability_signal(&kind_source) && has_short_structured_datetime
+    } else if lexicon.has_event_availability_signal(&kind_source)
+        && has_short_structured_datetime
+        && has_explicit_schedule_anchor
     {
         EventHintKind::Availability
     } else {

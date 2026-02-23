@@ -717,6 +717,44 @@ fn parse_contact_hints_salutation_name_is_case_insensitive() {
 }
 
 #[test]
+fn parse_contact_hints_salutation_truncates_inline_sentence_tail() {
+    let msg = concat!(
+        "From: Support <support@example.com>\n",
+        "To: Aurel <aurel@example.com>\n",
+        "Subject: Greeting\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Dear Aurelien, Thank you for your purchase at FIT HUB!\n",
+        "\n",
+        "Your renewal is active.\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert!(parsed.contact_hints.iter().any(|h| {
+        h.source == mailbox_parser::ContactHintSource::Salutation
+            && h.name.as_deref() == Some("Aurelien")
+    }));
+}
+
+#[test]
+fn parse_contact_hints_salutation_truncates_multilingual_tail_marker() {
+    let msg = concat!(
+        "From: Support <support@example.com>\n",
+        "To: Jean <jean@example.com>\n",
+        "Subject: Greeting\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Bonjour Jean merci pour votre message\n",
+        "\n",
+        "Suite de la demande.\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert!(parsed.contact_hints.iter().any(|h| {
+        h.source == mailbox_parser::ContactHintSource::Salutation
+            && h.name.as_deref() == Some("Jean")
+    }));
+}
+
+#[test]
 fn parse_attachment_hints_detect_inline_logo() {
     let msg = concat!(
         "From: Alice <alice@example.com>\n",
@@ -978,6 +1016,23 @@ fn parse_event_hints_ignores_newsletter_numbered_marketing_list_noise() {
         "1. Hold extra cash for expenses and buying cheap if markets fall.\n",
         "2. Diversify outside stocks (Gold, real estate, etc.).\n",
         "3. Hold a slice of wealth in alternatives that tend not to move with equities.\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert!(parsed.event_hints.is_empty());
+}
+
+#[test]
+fn parse_event_hints_ignores_multilingual_newsletter_availability_noise() {
+    let msg = concat!(
+        "From: Lettre <news@example.fr>\n",
+        "To: User <user@example.com>\n",
+        "Subject: Les tendances IA de la semaine\n",
+        "List-Unsubscribe: <https://example.com/unsub>\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "## Tendances du jour\n",
+        "* Gemini 3 est maintenant disponible pour tous.\n",
+        "* 3 conseils pour aller plus vite avec l'IA.\n",
     );
     let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
     assert!(parsed.event_hints.is_empty());

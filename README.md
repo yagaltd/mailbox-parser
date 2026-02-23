@@ -115,6 +115,7 @@ Notable heuristics:
 - Signature URL normalization handles wrapped forms (for example `[label](url)`, `label<url>`, `[n]url`) before classification to avoid malformed hint URLs.
 - Signature boundary detection also uses blank-line structure as a supporting signal (with contact/sign-off evidence guards) to better trim trailing signature cards from `reply_text` without cutting normal body paragraphs.
 - Salutation-derived contact names are normalized by removing greeting prefixes (for example `Hi`, `Hello`, `Bonjour`) and trailing punctuation before emission in `contact_hints`.
+- Salutation-derived contact names also truncate inline body tails (for example `Dear Aurelien, Thank you ...` -> `Aurelien`) to avoid greeting-line over-capture.
 
 ### Event hint model
 
@@ -126,6 +127,7 @@ Notable heuristics:
 - Header metadata lines (`From:`, `Sent:`, `Enviado el:`, `Asunto:`, etc.) are ignored before event extraction to reduce quote/header contamination.
 - `location_candidates` are restricted to location-like snippets (venue/address/room/building lines), not arbitrary prose.
 - Newsletters/promotions suppress numbered marketing list noise (for example `1. ... 2. ... 3. ...`) from datetime candidate extraction when no real scheduling structure exists.
+- Newsletter/promotion bullet blocks with marketing/update phrasing (`now live`, `trending`, localized equivalents) are also suppressed unless explicit scheduling anchors exist.
 - Reservation/booking confirmations are classified as `event_hints.kind=reservation` with subtype in `event_hints.reservation_type` (`restaurant`, `hotel`, `spa`, `salon`, `bar`, `other`) when enough reservation intent is detected.
 
 ### Mail kind + direction hints

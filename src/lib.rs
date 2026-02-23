@@ -426,6 +426,8 @@ pub enum ServiceLifecycleKind {
     SubscriptionRenewed,
     SubscriptionCanceled,
     MembershipUpdated,
+    OrderConfirmation,
+    TicketConfirmation,
     BillingNotice,
     Unknown,
 }
@@ -568,7 +570,10 @@ pub fn parse_rfc822(bytes: &[u8]) -> Result<ParsedEmail> {
     parse_rfc822_with_options(bytes, &ParseRfc822Options::default())
 }
 
-pub fn parse_rfc822_with_options(bytes: &[u8], options: &ParseRfc822Options) -> Result<ParsedEmail> {
+pub fn parse_rfc822_with_options(
+    bytes: &[u8],
+    options: &ParseRfc822Options,
+) -> Result<ParsedEmail> {
     let message = MessageParser::default()
         .parse(bytes)
         .ok_or_else(|| anyhow!("failed to parse RFC822 message"))?;
@@ -619,7 +624,8 @@ pub fn parse_rfc822_with_options(bytes: &[u8], options: &ParseRfc822Options) -> 
         }
     }
 
-    let salutation = first_block_of_kind(&body_canonical, &blocks, crate::EmailBlockKind::Salutation);
+    let salutation =
+        first_block_of_kind(&body_canonical, &blocks, crate::EmailBlockKind::Salutation);
     let signature = first_block_of_kind(&body_canonical, &blocks, crate::EmailBlockKind::Signature);
     let reply = crate::email_text::reply_text(&body_canonical, &blocks);
     let forwarded_segments = parse_forwarded_segments_from_blocks(&body_canonical, &blocks);
@@ -655,14 +661,8 @@ pub fn parse_rfc822_with_options(bytes: &[u8], options: &ParseRfc822Options) -> 
         &raw_headers,
         &service_lifecycle_hints,
     );
-    let direction_hint = infer_direction_hint(
-        &from,
-        &to,
-        &cc,
-        &bcc,
-        &reply_to,
-        &options.owner_emails,
-    );
+    let direction_hint =
+        infer_direction_hint(&from, &to, &cc, &bcc, &reply_to, &options.owner_emails);
 
     Ok(ParsedEmail {
         message_id,
@@ -1414,7 +1414,8 @@ fn parse_forwarded_segment(
         body,
         &nested_blocks,
     ));
-    segment.salutation = first_block_of_kind(body, &nested_blocks, crate::EmailBlockKind::Salutation);
+    segment.salutation =
+        first_block_of_kind(body, &nested_blocks, crate::EmailBlockKind::Salutation);
     segment.signature = first_block_of_kind(body, &nested_blocks, crate::EmailBlockKind::Signature);
 
     for b in &nested_blocks {
@@ -1435,16 +1436,17 @@ fn parse_forwarded_segment(
         }
     }
 
-    segment.parse_confidence = if segment.headers.raw_lines.len() >= 2 && !segment.reply_text.is_empty() {
-        HintConfidence::High
-    } else if !segment.headers.raw_lines.is_empty()
-        || !segment.reply_text.is_empty()
-        || !segment.signature.as_deref().unwrap_or("").is_empty()
-    {
-        HintConfidence::Medium
-    } else {
-        HintConfidence::Low
-    };
+    segment.parse_confidence =
+        if segment.headers.raw_lines.len() >= 2 && !segment.reply_text.is_empty() {
+            HintConfidence::High
+        } else if !segment.headers.raw_lines.is_empty()
+            || !segment.reply_text.is_empty()
+            || !segment.signature.as_deref().unwrap_or("").is_empty()
+        {
+            HintConfidence::Medium
+        } else {
+            HintConfidence::Low
+        };
 
     for nested_raw in &segment.forwarded_blocks {
         let nested_raw = nested_raw.trim();
@@ -1488,11 +1490,7 @@ fn strip_embedded_header_bundle_from_reply(reply: &str) -> String {
         let s = s.trim();
         let colon = s.find(':')?;
         let key = s[..colon].replace(' ', "").to_ascii_lowercase();
-        if key.is_empty() {
-            None
-        } else {
-            Some(key)
-        }
+        if key.is_empty() { None } else { Some(key) }
     };
     let is_header_key = |key: &str| -> bool {
         matches!(
@@ -1528,9 +1526,24 @@ fn strip_embedded_header_bundle_from_reply(reply: &str) -> String {
     let is_anchor_key = |key: &str| {
         matches!(
             key,
-            "from" | "sent" | "date" | "subject" | "de" | "enviado" | "enviadoel" | "envoyé"
-                | "objet" | "von" | "gesendet" | "betreff" | "inviato" | "oggetto"
-                | "verzonden" | "onderwerp" | "wysłano" | "temat"
+            "from"
+                | "sent"
+                | "date"
+                | "subject"
+                | "de"
+                | "enviado"
+                | "enviadoel"
+                | "envoyé"
+                | "objet"
+                | "von"
+                | "gesendet"
+                | "betreff"
+                | "inviato"
+                | "oggetto"
+                | "verzonden"
+                | "onderwerp"
+                | "wysłano"
+                | "temat"
         )
     };
 
@@ -1623,9 +1636,7 @@ fn parse_forwarded_headers(raw_block: &str) -> (ParsedForwardedHeaders, usize) {
     let split_header_key_value = |line: &str| -> Option<(String, String)> {
         let normalized = normalize_forwarded_header_line(line);
         let colon_idx = normalized.find(':')?;
-        let key = normalized[..colon_idx]
-            .replace(' ', "")
-            .to_lowercase();
+        let key = normalized[..colon_idx].replace(' ', "").to_lowercase();
         let value = normalized[colon_idx + 1..].trim().to_string();
         Some((key, value))
     };
@@ -1720,8 +1731,20 @@ fn parse_forwarded_headers(raw_block: &str) -> (ParsedForwardedHeaders, usize) {
 
         let is_addr_key = matches!(
             key.as_str(),
-            "from" | "de" | "von" | "da" | "van" | "od" | "to" | "a" | "à" | "para" | "an"
-                | "aan" | "do" | "cc"
+            "from"
+                | "de"
+                | "von"
+                | "da"
+                | "van"
+                | "od"
+                | "to"
+                | "a"
+                | "à"
+                | "para"
+                | "an"
+                | "aan"
+                | "do"
+                | "cc"
         );
         let mut last_consumed = idx;
         let mut j = idx + 1;
@@ -2079,13 +2102,31 @@ fn classify_profile_url(url: &str) -> (ContactProfileType, Option<String>, Strin
     if host.ends_with("linkedin.com") {
         let p = path.trim_start_matches('/').to_ascii_lowercase();
         if p.starts_with("company/") {
-            let handle = p.trim_start_matches("company/").split('/').next().unwrap_or("").trim();
-            let h = if handle.is_empty() { None } else { Some(handle.to_string()) };
+            let handle = p
+                .trim_start_matches("company/")
+                .split('/')
+                .next()
+                .unwrap_or("")
+                .trim();
+            let h = if handle.is_empty() {
+                None
+            } else {
+                Some(handle.to_string())
+            };
             return (ContactProfileType::LinkedinCompany, h, host);
         }
         if p.starts_with("in/") {
-            let handle = p.trim_start_matches("in/").split('/').next().unwrap_or("").trim();
-            let h = if handle.is_empty() { None } else { Some(handle.to_string()) };
+            let handle = p
+                .trim_start_matches("in/")
+                .split('/')
+                .next()
+                .unwrap_or("")
+                .trim();
+            let h = if handle.is_empty() {
+                None
+            } else {
+                Some(handle.to_string())
+            };
             return (ContactProfileType::LinkedinPerson, h, host);
         }
         return (ContactProfileType::Other, seg, host);
@@ -2113,7 +2154,16 @@ fn classify_profile_url(url: &str) -> (ContactProfileType, Option<String>, Strin
 
 fn derive_signature_line_buckets(sig: &str) -> (Vec<String>, Vec<String>, Vec<String>) {
     let org_tokens = [
-        "inc", "llc", "corp", "company", "sas", "gmbh", "ltd", "sa", "sarl", "ag",
+        "inc",
+        "llc",
+        "corp",
+        "company",
+        "sas",
+        "gmbh",
+        "ltd",
+        "sa",
+        "sarl",
+        "ag",
         "technologies",
     ];
     let title_tokens = [
@@ -2128,7 +2178,15 @@ fn derive_signature_line_buckets(sig: &str) -> (Vec<String>, Vec<String>, Vec<St
         "consultant",
     ];
     let addr_tokens = [
-        "avenue", "street", "road", "blvd", "boulevard", "city", "france", "germany", "canada",
+        "avenue",
+        "street",
+        "road",
+        "blvd",
+        "boulevard",
+        "city",
+        "france",
+        "germany",
+        "canada",
         "usa",
     ];
 
@@ -2241,8 +2299,18 @@ fn extract_contact_hints(
         ContactHintSource::FromHeader,
         ContactHintRole::From,
     );
-    push_header_contact_hints(&mut out, to, ContactHintSource::ToHeader, ContactHintRole::To);
-    push_header_contact_hints(&mut out, cc, ContactHintSource::CcHeader, ContactHintRole::Cc);
+    push_header_contact_hints(
+        &mut out,
+        to,
+        ContactHintSource::ToHeader,
+        ContactHintRole::To,
+    );
+    push_header_contact_hints(
+        &mut out,
+        cc,
+        ContactHintSource::CcHeader,
+        ContactHintRole::Cc,
+    );
     push_header_contact_hints(
         &mut out,
         bcc,
@@ -2365,7 +2433,11 @@ fn extract_contact_hints(
             .as_deref()
             .map(normalize_token_alnum)
             .filter(|h| !h.is_empty());
-        let host_root = if host.is_empty() { None } else { Some(root_domain(&host)) };
+        let host_root = if host.is_empty() {
+            None
+        } else {
+            Some(root_domain(&host))
+        };
 
         let mut best: Option<(usize, &LinkAnchor, &'static str)> = None;
         for a in &anchors {
@@ -2439,7 +2511,11 @@ fn extract_contact_hints(
             source: ContactHintSource::Signature,
             role: ContactHintRole::Mentioned,
             confidence,
-            company_domain: if host.is_empty() { None } else { Some(host.clone()) },
+            company_domain: if host.is_empty() {
+                None
+            } else {
+                Some(host.clone())
+            },
             link_key: hint_link_key,
             linked_entity_key,
             link_reason,
@@ -2449,7 +2525,14 @@ fn extract_contact_hints(
 }
 
 fn derive_attachment_hints(attachments: &[ParsedAttachment]) -> Vec<ParsedAttachmentHint> {
-    let logo_tokens = ["logo", "signature", "icon", "linkedin", "twitter", "facebook"];
+    let logo_tokens = [
+        "logo",
+        "signature",
+        "icon",
+        "linkedin",
+        "twitter",
+        "facebook",
+    ];
     attachments
         .iter()
         .map(|a| {
@@ -2522,10 +2605,24 @@ fn extract_event_hints(subject: Option<&str>, reply_text: &str) -> Vec<ParsedEve
         "dec",
         "december",
     ];
-    let weekday_tokens = ["mon", "monday", "tue", "tuesday", "wed", "wednesday", "thu", "thursday", "fri", "friday", "sat", "saturday", "sun", "sunday"];
+    let weekday_tokens = [
+        "mon",
+        "monday",
+        "tue",
+        "tuesday",
+        "wed",
+        "wednesday",
+        "thu",
+        "thursday",
+        "fri",
+        "friday",
+        "sat",
+        "saturday",
+        "sun",
+        "sunday",
+    ];
     let tz_tokens = [
-        "utc", "gmt", "cet", "cest", "pst", "pdt", "est", "edt", "bst", "cst", "cdt", "mst",
-        "mdt",
+        "utc", "gmt", "cet", "cest", "pst", "pdt", "est", "edt", "bst", "cst", "cdt", "mst", "mdt",
     ];
     let meeting_hosts = [
         "zoom.us",
@@ -2553,16 +2650,7 @@ fn extract_event_hints(subject: Option<&str>, reply_text: &str) -> Vec<ParsedEve
         "betreff:",
     ];
     let location_tokens = [
-        "avenue",
-        "street",
-        "road",
-        "site",
-        "venue",
-        "office",
-        "room",
-        "unit",
-        "building",
-        "campus",
+        "avenue", "street", "road", "site", "venue", "office", "room", "unit", "building", "campus",
     ];
     let clean_token = |raw: &str| -> String {
         raw.trim_matches(move |c: char| {
@@ -2596,7 +2684,10 @@ fn extract_event_hints(subject: Option<&str>, reply_text: &str) -> Vec<ParsedEve
             if parts.len() != 3 {
                 continue;
             }
-            if !parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit())) {
+            if !parts
+                .iter()
+                .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
+            {
                 continue;
             }
             let lens: Vec<usize> = parts.iter().map(|p| p.len()).collect();
@@ -2688,7 +2779,11 @@ fn extract_event_hints(subject: Option<&str>, reply_text: &str) -> Vec<ParsedEve
     };
     let has_strict_timezone = |line: &str| -> bool {
         let lower = line.to_ascii_lowercase();
-        if lower.contains("utc+") || lower.contains("utc-") || lower.contains("gmt+") || lower.contains("gmt-") {
+        if lower.contains("utc+")
+            || lower.contains("utc-")
+            || lower.contains("gmt+")
+            || lower.contains("gmt-")
+        {
             return true;
         }
         line.split_whitespace().any(|tok| {
@@ -2784,7 +2879,10 @@ fn extract_event_hints(subject: Option<&str>, reply_text: &str) -> Vec<ParsedEve
         EventHintKind::Meeting
     } else if ["deadline", "due"].iter().any(|k| kind_source.contains(k)) {
         EventHintKind::Deadline
-    } else if ["available", "availability"].iter().any(|k| kind_source.contains(k)) {
+    } else if ["available", "availability"]
+        .iter()
+        .any(|k| kind_source.contains(k))
+    {
         EventHintKind::Availability
     } else {
         EventHintKind::Generic
@@ -2889,13 +2987,7 @@ fn extract_mail_kind_hints(
         }
     }
     for token in [
-        "receipt",
-        "invoice",
-        "order",
-        "shipment",
-        "tracking",
-        "waybill",
-        "courier",
+        "receipt", "invoice", "order", "shipment", "tracking", "waybill", "courier",
     ] {
         if text.contains(token) {
             add(MailKind::Transactional, 2, &format!("token:{token}"));
@@ -3152,28 +3244,89 @@ fn has_strong_lifecycle_structure(text: &str) -> bool {
 
 fn has_lifecycle_keyword(text: &str) -> bool {
     let t = text.to_ascii_lowercase();
+    // Canonical lifecycle/transaction tokens across supported locales.
     [
+        // English
         "subscription cancellation",
-        "has been canceled",
-        "membership canceled",
+        "subscription canceled",
         "subscription renewed",
+        "membership canceled",
         "auto-renew",
         "invoice",
         "payment failed",
         "billing",
+        "order confirmation",
+        "ticket confirmation",
+        // French
+        "abonnement",
+        "annulation d'abonnement",
+        "abonnement annul",
+        "renouvellement",
         "facture",
         "facturation",
-        "pago",
+        "confirmation de commande",
+        "confirmation de billet",
+        // Spanish
+        "suscripción",
+        "suscripcion",
+        "cancelación de suscripción",
+        "cancelacion de suscripcion",
+        "renovación",
+        "renovacion",
         "factura",
         "facturación",
+        "facturacion",
+        "pago",
+        "confirmación de pedido",
+        "confirmacion de pedido",
+        "confirmación de entrada",
+        "confirmacion de entrada",
+        // German
         "abonnement",
-        "renouvellement",
-        "cancelación",
-        "vencimiento",
-        "échéance",
+        "mitgliedschaft",
+        "gekündigt",
+        "verlängert",
+        "verlaengert",
+        "rechnung",
+        "abrechnung",
+        "zahlung fehlgeschlagen",
+        "bestellbestätigung",
+        "bestellbestaetigung",
+        "ticketbestätigung",
+        "ticketbestaetigung",
+        // Italian
+        "abbonamento",
+        "annullamento abbonamento",
+        "rinnovo",
+        "fattura",
+        "pagamento non riuscito",
+        "conferma ordine",
+        "conferma biglietto",
+        // Dutch
+        "abonnement",
+        "annulering",
+        "verlenging",
+        "factuur",
+        "betaling mislukt",
+        "bestelbevestiging",
+        "ticketbevestiging",
+        // Polish
+        "subskrypcja",
+        "anulowanie subskrypcji",
+        "odnowienie",
+        "faktura",
+        "platnosc nieudana",
+        "płatność nieudana",
+        "potwierdzenie zamówienia",
+        "potwierdzenie zamowienia",
+        "potwierdzenie biletu",
     ]
     .iter()
     .any(|k| t.contains(k))
+}
+
+fn has_any_token(text: &str, tokens: &[&str]) -> bool {
+    tokens.iter().any(|token| text.contains(token))
 }
 
 fn extract_service_lifecycle_hints(
@@ -3190,6 +3343,30 @@ fn extract_service_lifecycle_hints(
     );
     let strong_structure = has_strong_lifecycle_structure(&text);
     let has_keyword = has_lifecycle_keyword(&text);
+    let has_order_or_ticket_confirmation = has_any_token(
+        &text,
+        &[
+            "order confirmation",
+            "ticket confirmation",
+            "bestellbestätigung",
+            "bestellbestaetigung",
+            "ticketbestätigung",
+            "ticketbestaetigung",
+            "conferma ordine",
+            "conferma biglietto",
+            "confirmation de commande",
+            "confirmation de billet",
+            "confirmación de pedido",
+            "confirmacion de pedido",
+            "confirmación de entrada",
+            "confirmacion de entrada",
+            "bestelbevestiging",
+            "ticketbevestiging",
+            "potwierdzenie zamówienia",
+            "potwierdzenie zamowienia",
+            "potwierdzenie biletu",
+        ],
+    );
     let sender = raw_headers
         .get("from")
         .map(|s| s.to_ascii_lowercase())
@@ -3210,41 +3387,140 @@ fn extract_service_lifecycle_hints(
     let gate_allows = match gate {
         LifecycleGateDecision::Allow => true,
         LifecycleGateDecision::Block => strong_structure && has_keyword,
-        LifecycleGateDecision::AllowStrongOnly => (strong_structure && has_keyword) || known_billing_sender,
+        LifecycleGateDecision::AllowStrongOnly => {
+            (strong_structure && has_keyword)
+                || known_billing_sender
+                || has_order_or_ticket_confirmation
+        }
     };
     if !gate_allows {
         return Vec::new();
     }
 
     let mut signals = Vec::new();
-    let kind = if text.contains("subscription cancellation")
-        || text.contains("has been canceled")
-        || text.contains("subscription has been canceled")
-        || text.contains("membership canceled")
-    {
+    let kind = if has_any_token(
+        &text,
+        &[
+            "subscription cancellation",
+            "subscription canceled",
+            "has been canceled",
+            "membership canceled",
+            "annulation d'abonnement",
+            "abonnement annul",
+            "cancelación de suscripción",
+            "cancelacion de suscripcion",
+            "gekündigt",
+            "annullamento abbonamento",
+            "anulering",
+            "anulowanie subskrypcji",
+        ],
+    ) {
         signals.push("token:canceled".to_string());
         ServiceLifecycleKind::SubscriptionCanceled
-    } else if text.contains("subscription renewed")
-        || text.contains("renewed")
-        || text.contains("auto-renew")
-    {
+    } else if has_any_token(
+        &text,
+        &[
+            "subscription renewed",
+            "auto-renew",
+            "renouvellement",
+            "renovación",
+            "renovacion",
+            "verlängert",
+            "verlaengert",
+            "rinnovo",
+            "verlenging",
+            "odnowienie",
+        ],
+    ) {
         signals.push("token:renewed".to_string());
         ServiceLifecycleKind::SubscriptionRenewed
-    } else if text.contains("subscription created")
-        || text.contains("welcome")
-        || text.contains("new subscription")
-    {
+    } else if has_any_token(
+        &text,
+        &[
+            "subscription created",
+            "new subscription",
+            "welcome",
+            "bienvenue",
+            "bienvenido",
+            "willkommen",
+            "benvenuto",
+            "welkom",
+            "witamy",
+        ],
+    ) {
         signals.push("token:created".to_string());
         ServiceLifecycleKind::SubscriptionCreated
-    } else if text.contains("membership")
-        && (text.contains("updated") || text.contains("changed") || text.contains("plan"))
-    {
+    } else if has_any_token(
+        &text,
+        &[
+            "membership",
+            "mitgliedschaft",
+            "adhésion",
+            "afiliación",
+            "iscrizione",
+        ],
+    ) && has_any_token(
+        &text,
+        &[
+            "updated",
+            "changed",
+            "plan",
+            "mis à jour",
+            "actualizado",
+            "aktualisiert",
+            "aggiornato",
+            "bijgewerkt",
+            "zaktualizowano",
+        ],
+    ) {
         signals.push("token:membership_updated".to_string());
         ServiceLifecycleKind::MembershipUpdated
+    } else if has_any_token(
+        &text,
+        &[
+            "ticket confirmation",
+            "ticketbestätigung",
+            "ticketbestaetigung",
+            "ticketbevestiging",
+            "conferma biglietto",
+            "confirmation de billet",
+            "confirmación de entrada",
+            "confirmacion de entrada",
+            "potwierdzenie biletu",
+        ],
+    ) {
+        signals.push("token:ticket_confirmation".to_string());
+        ServiceLifecycleKind::TicketConfirmation
+    } else if has_any_token(
+        &text,
+        &[
+            "order confirmation",
+            "bestellbestätigung",
+            "bestellbestaetigung",
+            "bestelbevestiging",
+            "conferma ordine",
+            "confirmation de commande",
+            "confirmación de pedido",
+            "confirmacion de pedido",
+            "potwierdzenie zamówienia",
+            "potwierdzenie zamowienia",
+        ],
+    ) {
+        signals.push("token:order_confirmation".to_string());
+        ServiceLifecycleKind::OrderConfirmation
     } else if text.contains("invoice")
         || text.contains("payment")
         || text.contains("charged")
         || text.contains("billing")
+        || text.contains("facture")
+        || text.contains("facturación")
+        || text.contains("facturacion")
+        || text.contains("factura")
+        || text.contains("rechnung")
+        || text.contains("abrechnung")
+        || text.contains("fattura")
+        || text.contains("factuur")
+        || text.contains("faktura")
     {
         signals.push("token:billing_notice".to_string());
         ServiceLifecycleKind::BillingNotice
@@ -3310,11 +3586,12 @@ fn extract_service_lifecycle_hints(
         HintConfidence::High
     } else {
         match kind {
-            ServiceLifecycleKind::SubscriptionCanceled | ServiceLifecycleKind::SubscriptionRenewed => {
-                HintConfidence::Medium
-            }
+            ServiceLifecycleKind::SubscriptionCanceled
+            | ServiceLifecycleKind::SubscriptionRenewed => HintConfidence::Medium,
             ServiceLifecycleKind::SubscriptionCreated
             | ServiceLifecycleKind::MembershipUpdated
+            | ServiceLifecycleKind::OrderConfirmation
+            | ServiceLifecycleKind::TicketConfirmation
             | ServiceLifecycleKind::BillingNotice => HintConfidence::Low,
             ServiceLifecycleKind::Unknown => HintConfidence::Low,
         }
@@ -3352,6 +3629,72 @@ fn extract_billing_action_hints(
         ("facture", BillingActionKind::ViewInvoice),
         ("factura", BillingActionKind::ViewInvoice),
         ("pago", BillingActionKind::PayNow),
+        ("voir la facture", BillingActionKind::ViewInvoice),
+        ("ver factura", BillingActionKind::ViewInvoice),
+        ("rechnung ansehen", BillingActionKind::ViewInvoice),
+        ("visualizza fattura", BillingActionKind::ViewInvoice),
+        ("factuur bekijken", BillingActionKind::ViewInvoice),
+        ("zobacz faktur", BillingActionKind::ViewInvoice),
+        ("payer maintenant", BillingActionKind::PayNow),
+        ("pagar ahora", BillingActionKind::PayNow),
+        ("jetzt bezahlen", BillingActionKind::PayNow),
+        ("paga ora", BillingActionKind::PayNow),
+        ("nu betalen", BillingActionKind::PayNow),
+        ("zapłać teraz", BillingActionKind::PayNow),
+        ("zaplac teraz", BillingActionKind::PayNow),
+        ("gérer l'abonnement", BillingActionKind::ManageSubscription),
+        ("gerer l'abonnement", BillingActionKind::ManageSubscription),
+        (
+            "gestionar suscripción",
+            BillingActionKind::ManageSubscription,
+        ),
+        (
+            "gestionar suscripcion",
+            BillingActionKind::ManageSubscription,
+        ),
+        (
+            "abonnement verwalten",
+            BillingActionKind::ManageSubscription,
+        ),
+        (
+            "gestisci abbonamento",
+            BillingActionKind::ManageSubscription,
+        ),
+        ("abonnement beheren", BillingActionKind::ManageSubscription),
+        (
+            "zarządzaj subskrypcją",
+            BillingActionKind::ManageSubscription,
+        ),
+        (
+            "zarzadzaj subskrypcja",
+            BillingActionKind::ManageSubscription,
+        ),
+        (
+            "mettre à jour le paiement",
+            BillingActionKind::UpdatePaymentMethod,
+        ),
+        (
+            "mettre a jour le paiement",
+            BillingActionKind::UpdatePaymentMethod,
+        ),
+        ("actualizar pago", BillingActionKind::UpdatePaymentMethod),
+        (
+            "zahlungsmethode aktualisieren",
+            BillingActionKind::UpdatePaymentMethod,
+        ),
+        ("aggiorna pagamento", BillingActionKind::UpdatePaymentMethod),
+        (
+            "betaalmethode bijwerken",
+            BillingActionKind::UpdatePaymentMethod,
+        ),
+        (
+            "zaktualizuj płatność",
+            BillingActionKind::UpdatePaymentMethod,
+        ),
+        (
+            "zaktualizuj platnosc",
+            BillingActionKind::UpdatePaymentMethod,
+        ),
     ];
 
     for line in body_canonical.lines() {
@@ -3445,16 +3788,16 @@ fn infer_direction_hint(
     let rec_has_non_owner = recipients.iter().any(|a| !addr_is_owner(a));
     let matched_owner = owners.iter().next().cloned();
 
-    let (direction, confidence, reason) = if from_has_owner && rec_has_non_owner && !from_has_non_owner
-    {
-        (MailDirection::Outbound, HintConfidence::High, "from_owner")
-    } else if !from_has_owner && rec_has_owner {
-        (MailDirection::Inbound, HintConfidence::High, "to_owner")
-    } else if from_has_owner && rec_has_owner {
-        (MailDirection::SelfMessage, HintConfidence::Medium, "both")
-    } else {
-        (MailDirection::Unknown, HintConfidence::Low, "no_match")
-    };
+    let (direction, confidence, reason) =
+        if from_has_owner && rec_has_non_owner && !from_has_non_owner {
+            (MailDirection::Outbound, HintConfidence::High, "from_owner")
+        } else if !from_has_owner && rec_has_owner {
+            (MailDirection::Inbound, HintConfidence::High, "to_owner")
+        } else if from_has_owner && rec_has_owner {
+            (MailDirection::SelfMessage, HintConfidence::Medium, "both")
+        } else {
+            (MailDirection::Unknown, HintConfidence::Low, "no_match")
+        };
 
     Some(ParsedDirectionHint {
         direction,

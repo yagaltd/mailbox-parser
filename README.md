@@ -130,8 +130,9 @@ Notable heuristics:
 - `direction_hint` is emitted only when owner identity is known (for example via CLI `--owner-email`). It classifies messages as `inbound`, `outbound`, `self_message`, or `unknown`.
 - HTML-heavy newsletter/promotional emails apply footer cleanup before segmentation to reduce unsubscribe/footer leakage in `body_canonical` and downstream `reply_text`.
 - `unsubscribe_hints` includes `List-Unsubscribe`/`List-Unsubscribe-Post` and body unsubscribe/manage-preferences links.
-- `service_lifecycle_hints` classifies subscription/membership lifecycle events (`subscription_canceled`, `subscription_renewed`, etc.) and extracts key entities like customer/plan/amount when available.
+- `service_lifecycle_hints` classifies subscription/membership lifecycle events (`subscription_canceled`, `subscription_renewed`, `order_confirmation`, `ticket_confirmation`, etc.) and extracts key entities like customer/plan/amount when available.
 - `billing_action_hints` captures actionable billing links (`view_invoice`, `pay_now`, `manage_subscription`, etc.) even for newsletter/promo messages where lifecycle classification is intentionally gated.
+- Lifecycle and billing action detection include multilingual token sets for `en`, `fr`, `es`, `de`, `it`, `nl`, and `pl`.
 
 ### V3 email ingest/chunking flow
 

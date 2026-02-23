@@ -150,7 +150,10 @@ fn parse_forwarded_segment_extracts_headers_and_clean_reply() {
     let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
     assert_eq!(parsed.forwarded_segments.len(), 1);
     let seg = &parsed.forwarded_segments[0];
-    assert_eq!(seg.headers.subject.as_deref(), Some("Re: Reporting Interval"));
+    assert_eq!(
+        seg.headers.subject.as_deref(),
+        Some("Re: Reporting Interval")
+    );
     assert!(
         seg.headers
             .from
@@ -318,11 +321,17 @@ fn parse_forwarded_headers_matrix_current_languages() {
             "missing from for language keys {from_key}/{to_key}/{date_key}/{subject_key}"
         );
         assert!(
-            seg.headers.to.iter().any(|a| a.address == "bob@example.com"),
+            seg.headers
+                .to
+                .iter()
+                .any(|a| a.address == "bob@example.com"),
             "missing to for language keys {from_key}/{to_key}/{date_key}/{subject_key}"
         );
         assert!(seg.headers.date.is_some(), "missing date for {date_key}");
-        assert!(seg.headers.subject.is_some(), "missing subject for {subject_key}");
+        assert!(
+            seg.headers.subject.is_some(),
+            "missing subject for {subject_key}"
+        );
         assert!(!seg.reply_text.contains("*From:*"));
         assert!(!seg.reply_text.contains("*Sent:*"));
     }
@@ -424,7 +433,8 @@ fn parse_reply_strips_es_outlook_header_bundle() {
 
 #[test]
 fn parse_reply_strips_dashed_on_wrote_marker() {
-    let text = "Reply body\n\n---- on Thu, 18 Dec 2025 16:40:44 +0700 Thomas <t@x> wrote ----\n> quoted";
+    let text =
+        "Reply body\n\n---- on Thu, 18 Dec 2025 16:40:44 +0700 Thomas <t@x> wrote ----\n> quoted";
     let blocks = segment_email_body(text);
     let reply = reply_text(text, &blocks);
     assert!(reply.contains("Reply body"));
@@ -514,12 +524,12 @@ fn parse_extracts_contact_hints_and_signature_entities() {
             .iter()
             .any(|u| u.contains("linkedin.com/in/annamueller"))
     );
-    assert!(
-        parsed.contact_hints.iter().any(|h| {
-            h.url.as_deref().is_some_and(|u| u.contains("linkedin.com/in/annamueller"))
-                && h.profile_type.is_some()
-        })
-    );
+    assert!(parsed.contact_hints.iter().any(|h| {
+        h.url
+            .as_deref()
+            .is_some_and(|u| u.contains("linkedin.com/in/annamueller"))
+            && h.profile_type.is_some()
+    }));
     assert!(!parsed.signature_entities.is_partial);
 }
 
@@ -539,17 +549,18 @@ fn parse_contact_hints_extracts_bare_social_domains() {
     );
     let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
     assert!(parsed.contact_hints.iter().any(|h| {
-        h.url.as_deref()
+        h.url
+            .as_deref()
             .is_some_and(|u| u.contains("linkedin.com/company/anian-co"))
-            && h
-                .profile_type
+            && h.profile_type
                 .as_ref()
                 .is_some_and(|t| t == &mailbox_parser::ContactProfileType::LinkedinCompany)
     }));
     assert!(parsed.contact_hints.iter().any(|h| {
-        h.url.as_deref().is_some_and(|u| u.contains("x.com/nicolasg"))
-            && h
-                .profile_type
+        h.url
+            .as_deref()
+            .is_some_and(|u| u.contains("x.com/nicolasg"))
+            && h.profile_type
                 .as_ref()
                 .is_some_and(|t| t == &mailbox_parser::ContactProfileType::TwitterX)
     }));
@@ -572,7 +583,8 @@ fn parse_contact_hints_links_url_to_sender_when_domain_matches() {
         .contact_hints
         .iter()
         .find(|h| {
-            h.url.as_deref()
+            h.url
+                .as_deref()
                 .is_some_and(|u| u.contains("linkedin.com/company/anian-co"))
         })
         .expect("expected linkedin hint");
@@ -633,8 +645,8 @@ fn parse_contact_hints_normalizes_wrapped_signature_urls() {
     );
     assert!(urls.iter().any(|u| u.starts_with("http://www.tcb.gr")));
     assert!(
-        urls.iter()
-            .any(|u| u == "https://otrs.example.com/customer.pl?Action=CustomerTicketZoom&TicketID=31017")
+        urls.iter().any(|u| u
+            == "https://otrs.example.com/customer.pl?Action=CustomerTicketZoom&TicketID=31017")
     );
     assert!(
         urls.iter()
@@ -895,7 +907,10 @@ fn signature_extracts_terminal_kind_regards_with_name_and_title_tail() {
     let blocks = segment_email_body(text);
     assert!(blocks.iter().any(|b| b.kind == EmailBlockKind::Signature));
     let reply = reply_text(text, &blocks);
-    assert_eq!(reply, "Thanks for your support.\n\nThe command is now applied.");
+    assert_eq!(
+        reply,
+        "Thanks for your support.\n\nThe command is now applied."
+    );
 }
 
 #[test]
@@ -1070,7 +1085,12 @@ fn parse_html_newsletter_cleanup_removes_tail_footer_noise() {
     );
     let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
     assert!(parsed.body_canonical.contains("useful update"));
-    assert!(!parsed.body_canonical.to_ascii_lowercase().contains("unsubscribe"));
+    assert!(
+        !parsed
+            .body_canonical
+            .to_ascii_lowercase()
+            .contains("unsubscribe")
+    );
     assert!(
         !parsed
             .body_canonical
@@ -1148,8 +1168,16 @@ fn parse_cleanup_strips_reddit_digest_footer_tail() {
     );
     let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
     assert!(parsed.body_canonical.contains("Here are your posts."));
-    assert!(!parsed.body_canonical.contains("This email was intended for"));
-    assert!(!parsed.body_canonical.contains("Unsubscribefrom daily digest messages"));
+    assert!(
+        !parsed
+            .body_canonical
+            .contains("This email was intended for")
+    );
+    assert!(
+        !parsed
+            .body_canonical
+            .contains("Unsubscribefrom daily digest messages")
+    );
 }
 
 #[test]
@@ -1187,4 +1215,67 @@ fn parse_billing_action_hints_extracts_url_without_lifecycle() {
                 .as_deref()
                 .is_some_and(|u| u.contains("/billing/invoice/123"))
     }));
+}
+
+#[test]
+fn parse_service_lifecycle_hint_classifies_order_confirmation_not_billing_notice() {
+    let msg = concat!(
+        "From: Eventbrite <noreply@eventbrite.com>\n",
+        "To: User <user@example.com>\n",
+        "Subject: Order Confirmation - AI Summit 2026\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Thanks for your order.\n",
+        "Your order confirmation is ready.\n",
+        "Order ID: 12345\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert_eq!(parsed.service_lifecycle_hints.len(), 1);
+    assert_eq!(
+        parsed.service_lifecycle_hints[0].kind,
+        ServiceLifecycleKind::OrderConfirmation
+    );
+}
+
+#[test]
+fn parse_service_lifecycle_hint_detects_multilingual_billing_notice() {
+    let msg = concat!(
+        "From: Faktura <noreply@billing.example>\n",
+        "To: User <user@example.com>\n",
+        "Subject: Ihre Rechnung ist verfügbar\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Ihre Rechnung ist jetzt verfügbar.\n",
+        "Bitte Rechnung ansehen: https://billing.example/rechnung/123\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert_eq!(parsed.service_lifecycle_hints.len(), 1);
+    assert_eq!(
+        parsed.service_lifecycle_hints[0].kind,
+        ServiceLifecycleKind::BillingNotice
+    );
+    assert!(parsed.billing_action_hints.iter().any(|h| {
+        h.kind == BillingActionKind::ViewInvoice
+            && h.url
+                .as_deref()
+                .is_some_and(|u| u.contains("/rechnung/123"))
+    }));
+}
+
+#[test]
+fn parse_service_lifecycle_hint_detects_ticket_confirmation_multilingual() {
+    let msg = concat!(
+        "From: Billetterie <tickets@example.fr>\n",
+        "To: User <user@example.com>\n",
+        "Subject: Confirmation de billet - Conférence Produit\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Votre confirmation de billet est prête.\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert_eq!(parsed.service_lifecycle_hints.len(), 1);
+    assert_eq!(
+        parsed.service_lifecycle_hints[0].kind,
+        ServiceLifecycleKind::TicketConfirmation
+    );
 }

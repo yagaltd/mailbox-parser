@@ -114,6 +114,7 @@ Notable heuristics:
 - Signature URLs are classified into profile types (for example `linkedin_company`, `linkedin_person`, `twitter_x`, `website`) and emitted as `contact_hints` with confidence-based linkage metadata when strong domain/name signals exist.
 - Signature URL normalization handles wrapped forms (for example `[label](url)`, `label<url>`, `[n]url`) before classification to avoid malformed hint URLs.
 - Signature boundary detection also uses blank-line structure as a supporting signal (with contact/sign-off evidence guards) to better trim trailing signature cards from `reply_text` without cutting normal body paragraphs.
+- Salutation-derived contact names are normalized by removing greeting prefixes (for example `Hi`, `Hello`, `Bonjour`) and trailing punctuation before emission in `contact_hints`.
 
 ### Event hint model
 

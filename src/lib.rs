@@ -1953,6 +1953,61 @@ fn normalize_name_like(s: &str) -> String {
         .to_ascii_lowercase()
 }
 
+fn parse_salutation_name(line: &str) -> Option<String> {
+    const SALUTATION_PREFIXES: &[&str] = &[
+        "hi",
+        "hello",
+        "dear",
+        "bonjour",
+        "salut",
+        "hola",
+        "buenos",
+        "hallo",
+        "hej",
+        "ciao",
+        "dzień dobry",
+        "witam",
+    ];
+    let mut trimmed = line.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    for prefix in SALUTATION_PREFIXES {
+        let exact = lower == *prefix;
+        let spaced = lower.starts_with(&format!("{prefix} "));
+        let punct = [',', ':', ';', '-', '.', '!']
+            .iter()
+            .any(|ch| lower.starts_with(&format!("{prefix}{ch}")));
+        if !(exact || spaced || punct) {
+            continue;
+        }
+        if exact {
+            return None;
+        }
+        if let Some(rest) = trimmed.get(prefix.len()..) {
+            trimmed = rest.trim_start();
+            trimmed = trimmed.trim_start_matches(|c: char| {
+                c.is_ascii_whitespace() || matches!(c, ',' | ':' | ';' | '-' | '.')
+            });
+        }
+        break;
+    }
+    let cleaned = trimmed
+        .trim()
+        .trim_end_matches(|c: char| {
+            c.is_ascii_whitespace() || matches!(c, ',' | '.' | ';' | ':' | '!' | '?')
+        })
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if cleaned.is_empty() || !cleaned.chars().any(|c| c.is_alphanumeric()) {
+        None
+    } else {
+        Some(cleaned)
+    }
+}
+
 fn extract_email_candidates(text: &str) -> Vec<String> {
     let mut out = Vec::new();
     for token in text.split_whitespace() {
@@ -2437,10 +2492,9 @@ fn extract_contact_hints(
     );
 
     if let Some(line) = salutation {
-        let n = line.trim().trim_end_matches(',').trim();
-        if !n.is_empty() {
+        if let Some(n) = parse_salutation_name(line) {
             out.push(ParsedContactHint {
-                name: Some(n.to_string()),
+                name: Some(n.clone()),
                 email: None,
                 phone: None,
                 url: None,
@@ -2450,7 +2504,7 @@ fn extract_contact_hints(
                 role: ContactHintRole::Mentioned,
                 confidence: HintConfidence::Low,
                 company_domain: None,
-                link_key: compute_link_key(Some(n), None),
+                link_key: compute_link_key(Some(&n), None),
                 linked_entity_key: None,
                 link_reason: None,
             });

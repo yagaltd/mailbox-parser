@@ -661,6 +661,62 @@ fn parse_contact_hints_normalizes_wrapped_signature_urls() {
 }
 
 #[test]
+fn parse_contact_hints_salutation_name_strips_greeting_prefixes() {
+    let msg = concat!(
+        "From: Support <support@example.com>\n",
+        "To: Aurel <aurel@example.com>\n",
+        "Subject: Greeting\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Hi Aurelien12345. ,\n",
+        "\n",
+        "Please find the update below.\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert!(parsed.contact_hints.iter().any(|h| {
+        h.source == mailbox_parser::ContactHintSource::Salutation
+            && h.name.as_deref() == Some("Aurelien12345")
+    }));
+}
+
+#[test]
+fn parse_contact_hints_salutation_greeting_only_is_ignored() {
+    let msg = concat!(
+        "From: Support <support@example.com>\n",
+        "To: Aurel <aurel@example.com>\n",
+        "Subject: Greeting\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Hello,\n",
+        "\n",
+        "Please find the update below.\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert!(!parsed.contact_hints.iter().any(|h| {
+        h.source == mailbox_parser::ContactHintSource::Salutation && h.name.is_some()
+    }));
+}
+
+#[test]
+fn parse_contact_hints_salutation_name_is_case_insensitive() {
+    let msg = concat!(
+        "From: Support <support@example.com>\n",
+        "To: Aurel <aurel@example.com>\n",
+        "Subject: Greeting\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "hI, Aurelien12345\n",
+        "\n",
+        "Please find the update below.\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert!(parsed.contact_hints.iter().any(|h| {
+        h.source == mailbox_parser::ContactHintSource::Salutation
+            && h.name.as_deref() == Some("Aurelien12345")
+    }));
+}
+
+#[test]
 fn parse_attachment_hints_detect_inline_logo() {
     let msg = concat!(
         "From: Alice <alice@example.com>\n",

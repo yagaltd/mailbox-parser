@@ -125,6 +125,8 @@ Notable heuristics:
 - Timezones require explicit tokens/offsets (`UTC+`, `GMT-`, `CET`, etc.), avoiding substring false positives.
 - Header metadata lines (`From:`, `Sent:`, `Enviado el:`, `Asunto:`, etc.) are ignored before event extraction to reduce quote/header contamination.
 - `location_candidates` are restricted to location-like snippets (venue/address/room/building lines), not arbitrary prose.
+- Newsletters/promotions suppress numbered marketing list noise (for example `1. ... 2. ... 3. ...`) from datetime candidate extraction when no real scheduling structure exists.
+- Reservation/booking confirmations are classified as `event_hints.kind=reservation` with subtype in `event_hints.reservation_type` (`restaurant`, `hotel`, `spa`, `salon`, `bar`, `other`) when enough reservation intent is detected.
 
 ### Mail kind + direction hints
 

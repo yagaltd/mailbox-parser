@@ -320,6 +320,7 @@ pub struct ParsedAttachmentHint {
 pub enum EventHintKind {
     Meeting,
     Shipping,
+    Reservation,
     Deadline,
     Availability,
     Generic,
@@ -534,6 +535,8 @@ pub struct ParsedDateTimeCandidate {
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct ParsedEventHint {
     pub kind: EventHintKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reservation_type: Option<ReservationType>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub datetime_candidates: Vec<ParsedDateTimeCandidate>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -548,6 +551,17 @@ pub struct ParsedEventHint {
     pub missing_fields: Vec<EventMissingField>,
     #[serde(default)]
     pub confidence: HintConfidence,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ReservationType {
+    Hotel,
+    Restaurant,
+    Spa,
+    Salon,
+    Bar,
+    Other,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -2748,6 +2762,10 @@ fn extract_event_hints(
     let mut location_candidates = Vec::new();
     let mut meeting_links = Vec::new();
     let mut timezone_candidates = Vec::new();
+    let is_news_like = matches!(
+        primary_mail_kind,
+        Some(MailKind::Newsletter) | Some(MailKind::Promotion)
+    );
 
     let month_tokens = [
         "jan",
@@ -3013,6 +3031,78 @@ fn extract_event_hints(
                 >= 2;
         has_street_like || has_room_like || has_city_country_like
     };
+    let looks_like_numbered_marketing_line = |line: &str| -> bool {
+        let l = line.trim();
+        let after_number = if let Some(pos) = l.find(". ") {
+            if l[..pos].chars().all(|c| c.is_ascii_digit()) {
+                &l[pos + 2..]
+            } else {
+                l
+            }
+        } else if let Some(pos) = l.find(") ") {
+            if l[..pos].chars().all(|c| c.is_ascii_digit()) {
+                &l[pos + 2..]
+            } else {
+                l
+            }
+        } else {
+            l
+        };
+        if after_number == l {
+            return false;
+        }
+        let lower = after_number.to_ascii_lowercase();
+        [
+            "trick",
+            "tips",
+            "ways",
+            "reasons",
+            "mistakes",
+            "lessons",
+            "benefits",
+            "strategy",
+            "strategies",
+            "guide",
+        ]
+        .iter()
+        .any(|t| lower.contains(t))
+    };
+    let is_numbered_list_item = |line: &str| -> bool {
+        let l = line.trim_start_matches(['#', '-', '*', ' ']).trim_start();
+        if let Some(pos) = l.find(". ") {
+            return pos > 0 && l[..pos].chars().all(|c| c.is_ascii_digit());
+        }
+        if let Some(pos) = l.find(") ") {
+            return pos > 0 && l[..pos].chars().all(|c| c.is_ascii_digit());
+        }
+        false
+    };
+    let is_marketing_list_heading = |line: &str| -> bool {
+        let l = line.trim();
+        let lower = l.to_ascii_lowercase();
+        let has_heading_pattern = l.starts_with('#')
+            || lower
+                .split_whitespace()
+                .next()
+                .map(|tok| tok.chars().all(|c| c.is_ascii_digit()))
+                .unwrap_or(false);
+        has_heading_pattern
+            && [
+                "trick",
+                "tips",
+                "ways",
+                "reasons",
+                "mistakes",
+                "lessons",
+                "benefits",
+                "strategy",
+                "strategies",
+                "guide",
+            ]
+            .iter()
+            .any(|t| lower.contains(t))
+    };
+    let mut marketing_list_block_countdown = 0usize;
 
     for line in text.lines() {
         let l = line.trim();
@@ -3029,8 +3119,18 @@ fn extract_event_hints(
         let has_explicit_date_shape = l.split_whitespace().any(is_numeric_date_token)
             || has_month_range(l)
             || has_weekday_and_date(l);
+        if is_news_like && is_marketing_list_heading(l) {
+            marketing_list_block_countdown = 8;
+        }
+        let is_marketing_numbered_list_noise = is_news_like
+            && !has_time
+            && !has_explicit_date_shape
+            && (looks_like_numbered_marketing_line(l)
+                || is_marketing_list_heading(l)
+                || (marketing_list_block_countdown > 0 && is_numbered_list_item(l)));
         if has_date_anchor
             && !likely_noise_prose
+            && !is_marketing_numbered_list_noise
             && !(has_measurement_unit_noise(l) && !has_time && !has_explicit_date_shape)
         {
             datetime_candidates.push(ParsedDateTimeCandidate {
@@ -3048,6 +3148,9 @@ fn extract_event_hints(
         }
         if is_location_candidate_line(l) {
             location_candidates.push(l.to_string());
+        }
+        if marketing_list_block_countdown > 0 {
+            marketing_list_block_countdown -= 1;
         }
     }
     location_candidates.dedup();
@@ -3129,13 +3232,83 @@ fn extract_event_hints(
     .iter()
     .any(|k| kind_source.contains(k));
     let has_meeting_link = !meeting_links.is_empty();
+    let has_reservation_intent = [
+        "reservation",
+        "booking",
+        "booked",
+        "book your",
+        "check-in",
+        "check in",
+        "check-out",
+        "check out",
+        "table for",
+        "covers",
+        "confirmation id",
+        "réservation",
+        "reserva",
+        "reservierung",
+        "prenotazione",
+        "reservering",
+        "rezerwac",
+    ]
+    .iter()
+    .any(|k| kind_source.contains(k));
+    let reservation_type = if [
+        "restaurant",
+        "cafe",
+        "dinner",
+        "lunch",
+        "table",
+        "covers",
+        "reservation at",
+    ]
+    .iter()
+    .any(|k| kind_source.contains(k))
+    {
+        Some(ReservationType::Restaurant)
+    } else if [
+        "hotel",
+        "check-in",
+        "check in",
+        "check-out",
+        "check out",
+        "room",
+        "suite",
+        "stay",
+    ]
+    .iter()
+    .any(|k| kind_source.contains(k))
+    {
+        Some(ReservationType::Hotel)
+    } else if ["spa", "massage", "wellness", "facial"]
+        .iter()
+        .any(|k| kind_source.contains(k))
+    {
+        Some(ReservationType::Spa)
+    } else if [
+        "salon",
+        "haircut",
+        "barber",
+        "stylist",
+        "appointment with",
+    ]
+    .iter()
+    .any(|k| kind_source.contains(k))
+    {
+        Some(ReservationType::Salon)
+    } else if [" bar ", "cocktail", "happy hour", "pub"]
+        .iter()
+        .any(|k| kind_source.contains(k))
+    {
+        Some(ReservationType::Bar)
+    } else if has_reservation_intent {
+        Some(ReservationType::Other)
+    } else {
+        None
+    };
     let has_short_structured_datetime = datetime_candidates
         .iter()
         .any(|c| c.has_time || c.raw.len() <= 96);
-    let is_news_like = matches!(
-        primary_mail_kind,
-        Some(MailKind::Newsletter) | Some(MailKind::Promotion)
-    );
     let allow_shipping = if is_news_like {
         has_shipping_intent && has_hard_shipping_structure && has_short_structured_datetime
     } else {
@@ -3148,11 +3321,14 @@ fn extract_event_hints(
     } else {
         has_meeting_intent && (has_meeting_link || has_meeting_invite_verb)
     };
+    let allow_reservation = has_reservation_intent && has_short_structured_datetime;
 
     let kind = if allow_shipping {
         EventHintKind::Shipping
     } else if allow_meeting {
         EventHintKind::Meeting
+    } else if allow_reservation {
+        EventHintKind::Reservation
     } else if ["deadline", "due"].iter().any(|k| kind_source.contains(k))
         && has_short_structured_datetime
     {
@@ -3196,6 +3372,11 @@ fn extract_event_hints(
 
     vec![ParsedEventHint {
         kind,
+        reservation_type: if allow_reservation {
+            reservation_type
+        } else {
+            None
+        },
         datetime_candidates,
         location_candidates,
         meeting_links,

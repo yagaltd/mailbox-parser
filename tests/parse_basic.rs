@@ -966,6 +966,47 @@ fn parse_event_hints_newsletter_noise_is_gated_out() {
 }
 
 #[test]
+fn parse_event_hints_ignores_newsletter_numbered_marketing_list_noise() {
+    let msg = concat!(
+        "From: Nextool <news@example.com>\n",
+        "To: User <user@example.com>\n",
+        "Subject: The future of Siri is the future of the iPhone\n",
+        "List-Unsubscribe: <https://example.com/unsub>\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "### 3 Tricks Billionaires Use to Help Protect Wealth Through Shaky Markets\n",
+        "1. Hold extra cash for expenses and buying cheap if markets fall.\n",
+        "2. Diversify outside stocks (Gold, real estate, etc.).\n",
+        "3. Hold a slice of wealth in alternatives that tend not to move with equities.\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert!(parsed.event_hints.is_empty());
+}
+
+#[test]
+fn parse_event_hints_detects_restaurant_reservation_with_subtype() {
+    let msg = concat!(
+        "From: Paris Cafe <rez@example.com>\n",
+        "To: Aurel <aurel@example.com>\n",
+        "Subject: Confirmation Of Your New Reservation At Paris Cafe - Mr. Aurel .\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Your reservation details are below for Paris Cafe.\n",
+        "Date & Time: 2025-12-24 12:00 CET\n",
+        "Table for 2 guests.\n",
+        "We look forward to hosting you.\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert_eq!(parsed.event_hints.len(), 1);
+    let event = &parsed.event_hints[0];
+    assert_eq!(event.kind, mailbox_parser::EventHintKind::Reservation);
+    assert_eq!(
+        event.reservation_type,
+        Some(mailbox_parser::ReservationType::Restaurant)
+    );
+}
+
+#[test]
 fn parse_event_hints_location_candidates_only_keep_address_like_lines() {
     let msg = concat!(
         "From: Ops <ops@example.com>\n",

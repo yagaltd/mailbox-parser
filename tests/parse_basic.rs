@@ -1,6 +1,6 @@
 use mailbox_parser::{
-    EmailBlockKind, MailDirection, MailKind, ParseRfc822Options, ServiceLifecycleKind,
-    UnsubscribeKind, UnsubscribeSource, parse_rfc822,
+    BillingActionKind, EmailBlockKind, MailDirection, MailKind, ParseRfc822Options,
+    ServiceLifecycleKind, UnsubscribeKind, UnsubscribeSource, parse_rfc822,
     parse_rfc822_with_options, reply_text, segment_email_body,
 };
 use pretty_assertions::assert_eq;
@@ -1150,4 +1150,41 @@ fn parse_cleanup_strips_reddit_digest_footer_tail() {
     assert!(parsed.body_canonical.contains("Here are your posts."));
     assert!(!parsed.body_canonical.contains("This email was intended for"));
     assert!(!parsed.body_canonical.contains("Unsubscribefrom daily digest messages"));
+}
+
+#[test]
+fn lifecycle_gate_blocks_newsletter_billing_content_false_positive() {
+    let msg = concat!(
+        "From: News <news@daily.example>\n",
+        "To: User <user@example.com>\n",
+        "Subject: Market newsletter\n",
+        "List-Unsubscribe: <https://daily.example/unsub>\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Today we discuss billing strategy and invoice optimization in SaaS.\n",
+        "This is editorial content, not a notification.\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert!(parsed.service_lifecycle_hints.is_empty());
+}
+
+#[test]
+fn parse_billing_action_hints_extracts_url_without_lifecycle() {
+    let msg = concat!(
+        "From: Newsletter <news@example.com>\n",
+        "To: User <user@example.com>\n",
+        "Subject: Weekly digest\n",
+        "List-Unsubscribe: <https://example.com/unsub>\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "To view invoice details visit https://example.com/billing/invoice/123\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert!(parsed.service_lifecycle_hints.is_empty());
+    assert!(parsed.billing_action_hints.iter().any(|h| {
+        h.kind == BillingActionKind::ViewInvoice
+            && h.url
+                .as_deref()
+                .is_some_and(|u| u.contains("/billing/invoice/123"))
+    }));
 }

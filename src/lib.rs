@@ -60,6 +60,8 @@ pub struct ParsedEmail {
     pub unsubscribe_hints: Vec<ParsedUnsubscribeHint>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub service_lifecycle_hints: Vec<ParsedServiceLifecycleHint>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub billing_action_hints: Vec<ParsedBillingActionHint>,
 
     #[serde(default)]
     pub raw_headers: std::collections::BTreeMap<String, String>,
@@ -456,6 +458,49 @@ pub struct ParsedServiceLifecycleHint {
     pub signals: Vec<String>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BillingActionKind {
+    ViewInvoice,
+    PayNow,
+    ManageSubscription,
+    UpdatePaymentMethod,
+    BillingPortal,
+    Unknown,
+}
+impl Default for BillingActionKind {
+    fn default() -> Self {
+        Self::Unknown
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BillingActionSource {
+    Header,
+    BodyLink,
+    BodyText,
+}
+impl Default for BillingActionSource {
+    fn default() -> Self {
+        Self::BodyText
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct ParsedBillingActionHint {
+    pub kind: BillingActionKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    pub source: BillingActionSource,
+    #[serde(default)]
+    pub confidence: HintConfidence,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub related_lifecycle_kind: Option<ServiceLifecycleKind>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct ParseRfc822Options {
     pub owner_emails: Vec<String>,
@@ -591,11 +636,18 @@ pub fn parse_rfc822_with_options(bytes: &[u8], options: &ParseRfc822Options) -> 
     let attachment_hints = derive_attachment_hints(&attachments);
     let event_hints = extract_event_hints(subject.as_deref(), &reply);
     let unsubscribe_hints = extract_unsubscribe_hints(&raw_headers, &body_canonical);
+    let lifecycle_gate = decide_lifecycle_gate(subject.as_deref(), &body_canonical, &raw_headers);
     let service_lifecycle_hints = extract_service_lifecycle_hints(
         subject.as_deref(),
         &body_canonical,
         &raw_headers,
         &from,
+        lifecycle_gate,
+    );
+    let billing_action_hints = extract_billing_action_hints(
+        &raw_headers,
+        &body_canonical,
+        service_lifecycle_hints.first().map(|h| h.kind.clone()),
     );
     let mail_kind_hints = extract_mail_kind_hints(
         subject.as_deref(),
@@ -638,6 +690,7 @@ pub fn parse_rfc822_with_options(bytes: &[u8], options: &ParseRfc822Options) -> 
         direction_hint,
         unsubscribe_hints,
         service_lifecycle_hints,
+        billing_action_hints,
         raw_headers,
     })
 }
@@ -3056,17 +3109,112 @@ fn extract_unsubscribe_hints(
     out
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LifecycleGateDecision {
+    Allow,
+    Block,
+    AllowStrongOnly,
+}
+
+fn decide_lifecycle_gate(
+    subject: Option<&str>,
+    body_canonical: &str,
+    raw_headers: &std::collections::BTreeMap<String, String>,
+) -> LifecycleGateDecision {
+    let mk = extract_mail_kind_hints(subject, body_canonical, raw_headers, &[]);
+    let primary = mk
+        .iter()
+        .find(|h| h.is_primary)
+        .map(|h| h.kind.clone())
+        .unwrap_or(MailKind::Unknown);
+    match primary {
+        MailKind::Transactional | MailKind::Notification => LifecycleGateDecision::Allow,
+        MailKind::Newsletter | MailKind::Promotion => LifecycleGateDecision::Block,
+        MailKind::Personal | MailKind::Unknown => LifecycleGateDecision::AllowStrongOnly,
+    }
+}
+
+fn has_strong_lifecycle_structure(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    let markers = [
+        "customer name:",
+        "customer email:",
+        "offer:",
+        "plan:",
+        "invoice number:",
+        "order id:",
+        "payment failed",
+        "due date:",
+    ];
+    let marker_count = markers.iter().filter(|m| lower.contains(**m)).count();
+    marker_count >= 2
+}
+
+fn has_lifecycle_keyword(text: &str) -> bool {
+    let t = text.to_ascii_lowercase();
+    [
+        "subscription cancellation",
+        "has been canceled",
+        "membership canceled",
+        "subscription renewed",
+        "auto-renew",
+        "invoice",
+        "payment failed",
+        "billing",
+        "facture",
+        "facturation",
+        "pago",
+        "factura",
+        "facturación",
+        "abonnement",
+        "renouvellement",
+        "cancelación",
+        "vencimiento",
+        "échéance",
+    ]
+    .iter()
+    .any(|k| t.contains(k))
+}
+
 fn extract_service_lifecycle_hints(
     subject: Option<&str>,
     body_canonical: &str,
     raw_headers: &std::collections::BTreeMap<String, String>,
     from: &[EmailAddress],
+    gate: LifecycleGateDecision,
 ) -> Vec<ParsedServiceLifecycleHint> {
     let text = format!(
         "{}\n{}",
         subject.unwrap_or_default().to_ascii_lowercase(),
         body_canonical.to_ascii_lowercase()
     );
+    let strong_structure = has_strong_lifecycle_structure(&text);
+    let has_keyword = has_lifecycle_keyword(&text);
+    let sender = raw_headers
+        .get("from")
+        .map(|s| s.to_ascii_lowercase())
+        .unwrap_or_default();
+    let known_billing_sender = [
+        "stripe",
+        "kajabi",
+        "paddle",
+        "chargebee",
+        "paypal",
+        "xero",
+        "quickbooks",
+        "invoice",
+        "billing",
+    ]
+    .iter()
+    .any(|k| sender.contains(k));
+    let gate_allows = match gate {
+        LifecycleGateDecision::Allow => true,
+        LifecycleGateDecision::Block => strong_structure && has_keyword,
+        LifecycleGateDecision::AllowStrongOnly => (strong_structure && has_keyword) || known_billing_sender,
+    };
+    if !gate_allows {
+        return Vec::new();
+    }
 
     let mut signals = Vec::new();
     let kind = if text.contains("subscription cancellation")
@@ -3158,17 +3306,23 @@ fn extract_service_lifecycle_hints(
         .map(|s| s.trim().trim_matches('>').to_string())
         .or_else(|| from.first().map(|a| a.address.clone()));
 
-    vec![ParsedServiceLifecycleHint {
-        kind: kind.clone(),
-        confidence: match kind {
+    let confidence = if strong_structure {
+        HintConfidence::High
+    } else {
+        match kind {
             ServiceLifecycleKind::SubscriptionCanceled | ServiceLifecycleKind::SubscriptionRenewed => {
-                HintConfidence::High
+                HintConfidence::Medium
             }
             ServiceLifecycleKind::SubscriptionCreated
             | ServiceLifecycleKind::MembershipUpdated
-            | ServiceLifecycleKind::BillingNotice => HintConfidence::Medium,
+            | ServiceLifecycleKind::BillingNotice => HintConfidence::Low,
             ServiceLifecycleKind::Unknown => HintConfidence::Low,
-        },
+        }
+    };
+
+    vec![ParsedServiceLifecycleHint {
+        kind: kind.clone(),
+        confidence,
         provider,
         plan_name,
         customer_name,
@@ -3178,6 +3332,86 @@ fn extract_service_lifecycle_hints(
         effective_date_raw,
         signals,
     }]
+}
+
+fn extract_billing_action_hints(
+    _raw_headers: &std::collections::BTreeMap<String, String>,
+    body_canonical: &str,
+    related_lifecycle_kind: Option<ServiceLifecycleKind>,
+) -> Vec<ParsedBillingActionHint> {
+    use std::collections::HashSet;
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    let lower_tokens = [
+        ("view invoice", BillingActionKind::ViewInvoice),
+        ("invoice", BillingActionKind::ViewInvoice),
+        ("pay now", BillingActionKind::PayNow),
+        ("manage subscription", BillingActionKind::ManageSubscription),
+        ("update payment", BillingActionKind::UpdatePaymentMethod),
+        ("billing portal", BillingActionKind::BillingPortal),
+        ("facture", BillingActionKind::ViewInvoice),
+        ("factura", BillingActionKind::ViewInvoice),
+        ("pago", BillingActionKind::PayNow),
+    ];
+
+    for line in body_canonical.lines() {
+        let l = line.trim();
+        if l.is_empty() {
+            continue;
+        }
+        let ll = l.to_ascii_lowercase();
+        let matched_kind = lower_tokens
+            .iter()
+            .find(|(t, _)| ll.contains(t))
+            .map(|(_, k)| k.clone());
+        if matched_kind.is_none() {
+            continue;
+        }
+        let kind = matched_kind.unwrap_or(BillingActionKind::Unknown);
+        let urls: Vec<String> = l
+            .split_whitespace()
+            .filter_map(|tok| {
+                let t = tok.trim_matches(|c: char| {
+                    c.is_whitespace()
+                        || matches!(c, '<' | '>' | '(' | ')' | '[' | ']' | '"' | '\'' | ',')
+                });
+                if t.starts_with("http://") || t.starts_with("https://") {
+                    Some(t.to_string())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if urls.is_empty() {
+            let key = format!("text|{:?}|{}", kind, ll);
+            if seen.insert(key) {
+                out.push(ParsedBillingActionHint {
+                    kind,
+                    url: None,
+                    label: Some(l.to_string()),
+                    source: BillingActionSource::BodyText,
+                    confidence: HintConfidence::Low,
+                    related_lifecycle_kind: related_lifecycle_kind.clone(),
+                });
+            }
+        } else {
+            for u in urls {
+                let key = format!("url|{:?}|{}", kind, u);
+                if seen.insert(key) {
+                    out.push(ParsedBillingActionHint {
+                        kind: kind.clone(),
+                        url: Some(u),
+                        label: Some(l.to_string()),
+                        source: BillingActionSource::BodyLink,
+                        confidence: HintConfidence::Medium,
+                        related_lifecycle_kind: related_lifecycle_kind.clone(),
+                    });
+                }
+            }
+        }
+    }
+
+    out
 }
 
 fn infer_direction_hint(

@@ -1,11 +1,11 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    EmailBlockKind, ParsedAttachment, ParsedAttachmentHint, ParsedContactHint, ParsedEmail,
-    ParsedDirectionHint, ParsedEventHint, ParsedForwardedMessage, ParsedForwardedSegment,
-    ParsedMailKindHint, ParsedServiceLifecycleHint, ParsedSignatureEntities,
-    ParsedThread, ParsedThreadMessage, ParsedUnsubscribeHint, normalize_message_id, reply_text,
-    segment_email_body,
+    EmailBlockKind, ParsedAttachment, ParsedAttachmentHint, ParsedBillingActionHint,
+    ParsedContactHint, ParsedEmail, ParsedDirectionHint, ParsedEventHint,
+    ParsedForwardedMessage, ParsedForwardedSegment, ParsedMailKindHint,
+    ParsedServiceLifecycleHint, ParsedSignatureEntities, ParsedThread, ParsedThreadMessage,
+    ParsedUnsubscribeHint, normalize_message_id, reply_text, segment_email_body,
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -66,6 +66,8 @@ pub struct CanonicalMessage {
     pub unsubscribe_hints: Vec<ParsedUnsubscribeHint>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub service_lifecycle_hints: Vec<ParsedServiceLifecycleHint>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub billing_action_hints: Vec<ParsedBillingActionHint>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub forwarded_messages: Vec<ParsedForwardedMessage>,
@@ -191,6 +193,7 @@ fn canonicalize_email_message(
         direction_hint: email.direction_hint.clone(),
         unsubscribe_hints: email.unsubscribe_hints.clone(),
         service_lifecycle_hints: email.service_lifecycle_hints.clone(),
+        billing_action_hints: email.billing_action_hints.clone(),
         forwarded_messages: email.forwarded_messages.clone(),
         forwarded_segments: email.forwarded_segments.clone(),
     }

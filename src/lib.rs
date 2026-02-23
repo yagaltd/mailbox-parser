@@ -52,6 +52,10 @@ pub struct ParsedEmail {
     pub attachment_hints: Vec<ParsedAttachmentHint>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub event_hints: Vec<ParsedEventHint>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mail_kind_hints: Vec<ParsedMailKindHint>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub direction_hint: Option<ParsedDirectionHint>,
 
     #[serde(default)]
     pub raw_headers: std::collections::BTreeMap<String, String>,
@@ -314,6 +318,63 @@ impl Default for EventHintKind {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum MailKind {
+    Personal,
+    Newsletter,
+    Promotion,
+    Transactional,
+    Notification,
+    Unknown,
+}
+impl Default for MailKind {
+    fn default() -> Self {
+        Self::Unknown
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct ParsedMailKindHint {
+    pub kind: MailKind,
+    #[serde(default)]
+    pub confidence: HintConfidence,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub signals: Vec<String>,
+    #[serde(default)]
+    pub is_primary: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MailDirection {
+    Inbound,
+    Outbound,
+    SelfMessage,
+    Unknown,
+}
+impl Default for MailDirection {
+    fn default() -> Self {
+        Self::Unknown
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct ParsedDirectionHint {
+    pub direction: MailDirection,
+    #[serde(default)]
+    pub confidence: HintConfidence,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub matched_owner: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ParseRfc822Options {
+    pub owner_emails: Vec<String>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum EventMissingField {
@@ -373,6 +434,10 @@ pub struct ParsedThread {
 }
 
 pub fn parse_rfc822(bytes: &[u8]) -> Result<ParsedEmail> {
+    parse_rfc822_with_options(bytes, &ParseRfc822Options::default())
+}
+
+pub fn parse_rfc822_with_options(bytes: &[u8], options: &ParseRfc822Options) -> Result<ParsedEmail> {
     let message = MessageParser::default()
         .parse(bytes)
         .ok_or_else(|| anyhow!("failed to parse RFC822 message"))?;
@@ -439,6 +504,15 @@ pub fn parse_rfc822(bytes: &[u8]) -> Result<ParsedEmail> {
     );
     let attachment_hints = derive_attachment_hints(&attachments);
     let event_hints = extract_event_hints(subject.as_deref(), &reply);
+    let mail_kind_hints = extract_mail_kind_hints(subject.as_deref(), &body_canonical, &raw_headers);
+    let direction_hint = infer_direction_hint(
+        &from,
+        &to,
+        &cc,
+        &bcc,
+        &reply_to,
+        &options.owner_emails,
+    );
 
     Ok(ParsedEmail {
         message_id,
@@ -462,6 +536,8 @@ pub fn parse_rfc822(bytes: &[u8]) -> Result<ParsedEmail> {
         signature_entities,
         attachment_hints,
         event_hints,
+        mail_kind_hints,
+        direction_hint,
         raw_headers,
     })
 }
@@ -831,11 +907,12 @@ fn email_from_addr(addr: &mail_parser::Addr<'_>) -> Option<EmailAddress> {
 }
 
 fn build_canonical_body(text: Option<&str>, html: Option<&str>) -> String {
+    let has_html = html.map(|s| !s.trim().is_empty()).unwrap_or(false);
     let mut out = String::new();
     if let Some(t) = text.map(|s| s.trim()).filter(|s| !s.is_empty()) {
         out = t.to_string();
     } else if let Some(h) = html.map(|s| s.trim()).filter(|s| !s.is_empty()) {
-        let t = html_to_text(h);
+        let t = cleanup_html_boilerplate(&html_to_text(h));
         if !t.trim().is_empty() {
             out = t;
         }
@@ -843,7 +920,72 @@ fn build_canonical_body(text: Option<&str>, html: Option<&str>) -> String {
     if out.trim().is_empty() {
         return String::new();
     }
+    if has_html {
+        out = cleanup_html_boilerplate(&out);
+    }
     crate::email_text::normalize_email_text(&out)
+}
+
+fn cleanup_html_boilerplate(text: &str) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    if lines.len() < 4 {
+        return text.trim().to_string();
+    }
+
+    let is_strong_footer_line = |line: &str| -> bool {
+        let l = line.trim().to_ascii_lowercase();
+        l.contains("unsubscribe")
+            || l.contains("manage preferences")
+            || l.contains("view in browser")
+            || l.contains("mailing list")
+    };
+    let is_footer_line = |line: &str| -> bool {
+        let l = line.trim().to_ascii_lowercase();
+        if l.is_empty() {
+            return false;
+        }
+        is_strong_footer_line(&l)
+            || l.contains("privacy policy")
+            || l.contains("terms")
+            || l.contains("all rights reserved")
+            || l.contains("follow us")
+            || l.contains("facebook.com")
+            || l.contains("instagram.com")
+            || l.contains("linkedin.com")
+            || l.contains("youtube.com")
+            || l.contains("x.com/")
+            || l.contains("twitter.com/")
+            || l.starts_with("http://")
+            || l.starts_with("https://")
+    };
+
+    let mut footer_start: Option<usize> = None;
+    for i in (lines.len() / 3)..lines.len() {
+        if !is_footer_line(lines[i]) {
+            continue;
+        }
+        let footer_signal_count = lines[i..].iter().filter(|l| is_footer_line(l)).count();
+        let strong_signal_count = lines[i..]
+            .iter()
+            .filter(|l| is_strong_footer_line(l))
+            .count();
+        if footer_signal_count >= 2 && strong_signal_count >= 1 {
+            footer_start = Some(i);
+            break;
+        }
+    }
+
+    let mut kept: Vec<&str> = if let Some(start) = footer_start {
+        lines[..start].to_vec()
+    } else {
+        lines
+    };
+
+    while kept.last().is_some_and(|l| l.trim().is_empty()) {
+        kept.pop();
+    }
+
+    kept.join("\n").trim().to_string()
 }
 
 fn collect_attachments_and_forwards(
@@ -2485,6 +2627,196 @@ fn extract_event_hints(subject: Option<&str>, reply_text: &str) -> Vec<ParsedEve
         missing_fields,
         confidence,
     }]
+}
+
+fn extract_mail_kind_hints(
+    subject: Option<&str>,
+    body_canonical: &str,
+    raw_headers: &std::collections::BTreeMap<String, String>,
+) -> Vec<ParsedMailKindHint> {
+    use std::collections::HashMap;
+    let mut scores: HashMap<MailKind, i32> = HashMap::new();
+    let mut signals: HashMap<MailKind, Vec<String>> = HashMap::new();
+    let mut add = |kind: MailKind, weight: i32, signal: &str| {
+        *scores.entry(kind.clone()).or_insert(0) += weight;
+        signals.entry(kind).or_default().push(signal.to_string());
+    };
+
+    let header = |k: &str| raw_headers.get(k).map(|s| s.to_ascii_lowercase());
+    if raw_headers.contains_key("list-unsubscribe") {
+        add(MailKind::Newsletter, 3, "header:list_unsubscribe");
+    }
+    if raw_headers.contains_key("list-id") {
+        add(MailKind::Newsletter, 3, "header:list_id");
+    }
+    if let Some(p) = header("precedence") {
+        if p.contains("bulk") || p.contains("list") {
+            add(MailKind::Newsletter, 2, "header:precedence_bulk");
+        }
+    }
+    if let Some(a) = header("auto-submitted") {
+        if a.contains("auto-generated") {
+            add(MailKind::Notification, 2, "header:auto_submitted");
+        }
+    }
+
+    let text = format!(
+        "{}\n{}",
+        subject.unwrap_or_default().to_ascii_lowercase(),
+        body_canonical.to_ascii_lowercase()
+    );
+
+    for token in [
+        "sale",
+        "discount",
+        "% off",
+        "coupon",
+        "limited time",
+        "deal",
+        "promo",
+        "promotion",
+    ] {
+        if text.contains(token) {
+            add(MailKind::Promotion, 2, &format!("token:{token}"));
+        }
+    }
+    for token in [
+        "unsubscribe",
+        "manage preferences",
+        "view in browser",
+        "newsletter",
+    ] {
+        if text.contains(token) {
+            add(MailKind::Newsletter, 2, &format!("token:{token}"));
+        }
+    }
+    for token in [
+        "receipt",
+        "invoice",
+        "order",
+        "shipment",
+        "tracking",
+        "waybill",
+        "courier",
+    ] {
+        if text.contains(token) {
+            add(MailKind::Transactional, 2, &format!("token:{token}"));
+        }
+    }
+    for token in ["alert", "notification", "reminder", "digest", "update"] {
+        if text.contains(token) {
+            add(MailKind::Notification, 1, &format!("token:{token}"));
+        }
+    }
+    for token in ["thanks", "thank you", "please", "can you", "could you"] {
+        if text.contains(token) {
+            add(MailKind::Personal, 1, &format!("token:{token}"));
+        }
+    }
+
+    if let Some(from) = raw_headers.get("from").map(|s| s.to_ascii_lowercase()) {
+        if from.contains("no-reply")
+            || from.contains("noreply")
+            || from.contains("newsletter")
+            || from.contains("updates@")
+        {
+            add(MailKind::Notification, 1, "header:from_automation");
+        }
+    }
+
+    let mut ordered: Vec<(MailKind, i32, Vec<String>)> = scores
+        .into_iter()
+        .map(|(k, s)| (k.clone(), s, signals.remove(&k).unwrap_or_default()))
+        .collect();
+    ordered.sort_by(|a, b| b.1.cmp(&a.1));
+
+    if ordered.is_empty() {
+        return vec![ParsedMailKindHint {
+            kind: MailKind::Unknown,
+            confidence: HintConfidence::Low,
+            signals: vec!["fallback:no_signal".to_string()],
+            is_primary: true,
+        }];
+    }
+
+    let top = &ordered[0];
+    let second_score = ordered.get(1).map(|x| x.1).unwrap_or(0);
+    let lead = top.1 - second_score;
+    let confidence = if top.1 >= 5 && lead >= 2 {
+        HintConfidence::High
+    } else if top.1 >= 3 {
+        HintConfidence::Medium
+    } else {
+        HintConfidence::Low
+    };
+
+    let mut out = vec![ParsedMailKindHint {
+        kind: top.0.clone(),
+        confidence,
+        signals: top.2.clone(),
+        is_primary: true,
+    }];
+    if let Some(second) = ordered.get(1) {
+        if top.1 - second.1 <= 1 && second.1 >= 3 {
+            out.push(ParsedMailKindHint {
+                kind: second.0.clone(),
+                confidence: HintConfidence::Medium,
+                signals: second.2.clone(),
+                is_primary: false,
+            });
+        }
+    }
+    out
+}
+
+fn infer_direction_hint(
+    from: &[EmailAddress],
+    to: &[EmailAddress],
+    cc: &[EmailAddress],
+    bcc: &[EmailAddress],
+    reply_to: &[EmailAddress],
+    owner_emails: &[String],
+) -> Option<ParsedDirectionHint> {
+    use std::collections::HashSet;
+    let owners: HashSet<String> = owner_emails
+        .iter()
+        .map(|s| s.trim().to_ascii_lowercase())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if owners.is_empty() {
+        return None;
+    }
+
+    let addr_is_owner = |a: &EmailAddress| owners.contains(&a.address.to_ascii_lowercase());
+    let from_has_owner = from.iter().any(addr_is_owner);
+    let from_has_non_owner = from.iter().any(|a| !addr_is_owner(a));
+    let recipients: Vec<&EmailAddress> = to
+        .iter()
+        .chain(cc.iter())
+        .chain(bcc.iter())
+        .chain(reply_to.iter())
+        .collect();
+    let rec_has_owner = recipients.iter().any(|a| addr_is_owner(a));
+    let rec_has_non_owner = recipients.iter().any(|a| !addr_is_owner(a));
+    let matched_owner = owners.iter().next().cloned();
+
+    let (direction, confidence, reason) = if from_has_owner && rec_has_non_owner && !from_has_non_owner
+    {
+        (MailDirection::Outbound, HintConfidence::High, "from_owner")
+    } else if !from_has_owner && rec_has_owner {
+        (MailDirection::Inbound, HintConfidence::High, "to_owner")
+    } else if from_has_owner && rec_has_owner {
+        (MailDirection::SelfMessage, HintConfidence::Medium, "both")
+    } else {
+        (MailDirection::Unknown, HintConfidence::Low, "no_match")
+    };
+
+    Some(ParsedDirectionHint {
+        direction,
+        confidence,
+        matched_owner,
+        reason: Some(reason.to_string()),
+    })
 }
 
 fn html_to_text(input: &str) -> String {

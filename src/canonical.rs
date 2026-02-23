@@ -2,8 +2,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     EmailBlockKind, ParsedAttachment, ParsedAttachmentHint, ParsedContactHint, ParsedEmail,
-    ParsedEventHint, ParsedForwardedMessage, ParsedForwardedSegment, ParsedSignatureEntities, ParsedThread,
-    ParsedThreadMessage, normalize_message_id, reply_text, segment_email_body,
+    ParsedDirectionHint, ParsedEventHint, ParsedForwardedMessage, ParsedForwardedSegment,
+    ParsedMailKindHint, ParsedSignatureEntities, ParsedThread, ParsedThreadMessage,
+    normalize_message_id, reply_text, segment_email_body,
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -56,6 +57,10 @@ pub struct CanonicalMessage {
     pub attachment_hints: Vec<ParsedAttachmentHint>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub event_hints: Vec<ParsedEventHint>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub mail_kind_hints: Vec<ParsedMailKindHint>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub direction_hint: Option<ParsedDirectionHint>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub forwarded_messages: Vec<ParsedForwardedMessage>,
@@ -177,6 +182,8 @@ fn canonicalize_email_message(
         signature_entities: email.signature_entities.clone(),
         attachment_hints: email.attachment_hints.clone(),
         event_hints: email.event_hints.clone(),
+        mail_kind_hints: email.mail_kind_hints.clone(),
+        direction_hint: email.direction_hint.clone(),
         forwarded_messages: email.forwarded_messages.clone(),
         forwarded_segments: email.forwarded_segments.clone(),
     }

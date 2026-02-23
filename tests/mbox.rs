@@ -49,6 +49,7 @@ fn strict_mode_avoids_false_splits() {
             strict: true,
             max_messages: None,
             fail_fast: false,
+            owner_emails: Vec::new(),
         },
     );
     assert!(report.errors.is_empty());

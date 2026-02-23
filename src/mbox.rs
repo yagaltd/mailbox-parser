@@ -5,8 +5,8 @@ use std::path::Path;
 use anyhow::{Context, Result, anyhow};
 
 use crate::{
-    MailMessage, MailboxScanError, MailboxScanMessage, MailboxScanReport, parse_rfc822,
-    parse_rfc822_headers,
+    MailMessage, MailboxScanError, MailboxScanMessage, MailboxScanReport, parse_rfc822_headers,
+    parse_rfc822_with_options, ParseRfc822Options,
 };
 
 #[derive(Clone, Debug)]
@@ -29,6 +29,7 @@ pub struct MboxParseOptions {
     pub strict: bool,
     pub max_messages: Option<usize>,
     pub fail_fast: bool,
+    pub owner_emails: Vec<String>,
 }
 
 impl Default for MboxParseOptions {
@@ -37,6 +38,7 @@ impl Default for MboxParseOptions {
             strict: false,
             max_messages: None,
             fail_fast: false,
+            owner_emails: Vec::new(),
         }
     }
 }
@@ -86,7 +88,12 @@ pub fn parse_mbox_file(path: &Path, options: MboxParseOptions) -> Result<MboxPar
 
     for (idx, item) in iter.enumerate() {
         match item {
-            Ok(msg) => match parse_rfc822(&msg.raw) {
+            Ok(msg) => match parse_rfc822_with_options(
+                &msg.raw,
+                &ParseRfc822Options {
+                    owner_emails: options.owner_emails.clone(),
+                },
+            ) {
                 Ok(parsed) => {
                     let internal_date = parsed.date.clone().or(msg.separator_date.clone());
                     report.messages.push(MailMessage {

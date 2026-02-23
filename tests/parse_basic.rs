@@ -1,4 +1,7 @@
-use mailbox_parser::{EmailBlockKind, parse_rfc822, reply_text, segment_email_body};
+use mailbox_parser::{
+    EmailBlockKind, MailDirection, MailKind, ParseRfc822Options, parse_rfc822,
+    parse_rfc822_with_options, reply_text, segment_email_body,
+};
 use pretty_assertions::assert_eq;
 
 fn fixture(path: &str) -> Vec<u8> {
@@ -960,4 +963,117 @@ fn signature_keeps_plain_sentence_before_best_regards_in_reply() {
         .and_then(|b| text.get(b.byte_start..b.byte_end))
         .unwrap_or("");
     assert_eq!(sig.trim(), "Best regards,");
+}
+
+#[test]
+fn parse_mail_kind_hints_detects_newsletter_headers() {
+    let msg = concat!(
+        "From: Reddit <noreply@redditmail.com>\n",
+        "To: Aurel <fitchefaurel@gmail.com>\n",
+        "Subject: Weekly recap and recommendations\n",
+        "List-Unsubscribe: <https://reddit.com/unsubscribe>\n",
+        "List-Id: <news.reddit.com>\n",
+        "Precedence: bulk\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "View in browser\n",
+        "Manage preferences\n",
+        "Unsubscribe\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    let primary = parsed
+        .mail_kind_hints
+        .iter()
+        .find(|h| h.is_primary)
+        .expect("primary hint");
+    assert_eq!(primary.kind, MailKind::Newsletter);
+}
+
+#[test]
+fn parse_mail_kind_hints_detects_promotion_tokens() {
+    let msg = concat!(
+        "From: Shop <offers@example.com>\n",
+        "To: User <user@example.com>\n",
+        "Subject: Limited time sale - 30% off coupon\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Use this coupon for a discount deal today.\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    let primary = parsed
+        .mail_kind_hints
+        .iter()
+        .find(|h| h.is_primary)
+        .expect("primary hint");
+    assert_eq!(primary.kind, MailKind::Promotion);
+}
+
+#[test]
+fn parse_direction_hint_detects_outbound_with_owner_email() {
+    let msg = concat!(
+        "From: Aurel <fitchefaurel@gmail.com>\n",
+        "To: Team <team@example.com>\n",
+        "Subject: Follow up\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Please review.\n",
+    );
+    let parsed = parse_rfc822_with_options(
+        msg.as_bytes(),
+        &ParseRfc822Options {
+            owner_emails: vec!["fitchefaurel@gmail.com".to_string()],
+        },
+    )
+    .expect("parse");
+    let direction = parsed.direction_hint.expect("direction");
+    assert_eq!(direction.direction, MailDirection::Outbound);
+}
+
+#[test]
+fn parse_direction_hint_detects_inbound_with_owner_email() {
+    let msg = concat!(
+        "From: Sender <sender@example.com>\n",
+        "To: Aurel <fitchefaurel@gmail.com>\n",
+        "Subject: Re: Follow up\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Received.\n",
+    );
+    let parsed = parse_rfc822_with_options(
+        msg.as_bytes(),
+        &ParseRfc822Options {
+            owner_emails: vec!["fitchefaurel@gmail.com".to_string()],
+        },
+    )
+    .expect("parse");
+    let direction = parsed.direction_hint.expect("direction");
+    assert_eq!(direction.direction, MailDirection::Inbound);
+}
+
+#[test]
+fn parse_html_newsletter_cleanup_removes_tail_footer_noise() {
+    let msg = concat!(
+        "From: News <noreply@example.com>\n",
+        "To: User <user@example.com>\n",
+        "Subject: Digest\n",
+        "Content-Type: text/html; charset=utf-8\n",
+        "\n",
+        "<html><body>",
+        "<p>Hello there, this is the useful update.</p>",
+        "<p>Actionable line for users.</p>",
+        "<p>View in browser</p>",
+        "<p>Manage preferences</p>",
+        "<p>Unsubscribe</p>",
+        "<p>https://facebook.com/brand</p>",
+        "</body></html>",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert!(parsed.body_canonical.contains("useful update"));
+    assert!(!parsed.body_canonical.to_ascii_lowercase().contains("unsubscribe"));
+    assert!(
+        !parsed
+            .body_canonical
+            .to_ascii_lowercase()
+            .contains("manage preferences")
+    );
 }

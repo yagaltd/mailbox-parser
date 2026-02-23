@@ -23,6 +23,8 @@ Rust library for:
   - `signature_entities` (emails/phones/urls/org/title/address lines)
   - `attachment_hints` (inline/logo/pixel-like + size bucket)
   - `event_hints` (meeting/shipping/deadline/availability candidates + completeness)
+  - `mail_kind_hints` (personal/newsletter/promotion/transactional/notification inference)
+  - `direction_hint` (inbound/outbound/self/unknown when owner email context is provided)
 
 ```rust
 use mailbox_parser::parse_rfc822;
@@ -55,7 +57,7 @@ For a stable export/ingest format, you can convert `ParsedThread` → `Canonical
 - `CanonicalMessage.quoted_blocks` / `forwarded_blocks` / `signature`: preserved separately
 - `CanonicalMessage.forwarded_segments`: structured extraction of forwarded content (headers + nested body parts)
 - `CanonicalMessage.salutation` and `CanonicalMessage.disclaimer_blocks`: preserved when detected
-- `CanonicalMessage.contact_hints` / `signature_entities` / `attachment_hints` / `event_hints`: passthrough parser hints for backend enrichment pipelines
+- `CanonicalMessage.contact_hints` / `signature_entities` / `attachment_hints` / `event_hints` / `mail_kind_hints` / `direction_hint`: passthrough parser hints for backend enrichment pipelines
 
 ```rust
 use mailbox_parser::{canonicalize_threads, thread_messages};
@@ -118,6 +120,12 @@ Notable heuristics:
 - Meeting links are detected from URL host allowlists (for example `zoom.us`, `meet.google.com`, `teams.microsoft.com`) rather than generic words.
 - Timezones require explicit tokens/offsets (`UTC+`, `GMT-`, `CET`, etc.), avoiding substring false positives.
 - Header metadata lines (`From:`, `Sent:`, `Enviado el:`, `Asunto:`, etc.) are ignored before event extraction to reduce quote/header contamination.
+
+### Mail kind + direction hints
+
+- `mail_kind_hints` is deterministic and confidence-based (`personal`, `newsletter`, `promotion`, `transactional`, `notification`, `unknown`), using header + body signals.
+- `direction_hint` is emitted only when owner identity is known (for example via CLI `--owner-email`). It classifies messages as `inbound`, `outbound`, `self_message`, or `unknown`.
+- HTML-heavy newsletter/promotional emails apply footer cleanup before segmentation to reduce unsubscribe/footer leakage in `body_canonical` and downstream `reply_text`.
 
 ### V3 email ingest/chunking flow
 

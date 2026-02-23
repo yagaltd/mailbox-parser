@@ -390,10 +390,6 @@ impl LifecycleLexicon {
                 "booking",
                 "booked",
                 "book your",
-                "check-in",
-                "check in",
-                "check-out",
-                "check out",
                 "table for",
                 "covers",
                 "confirmation id",
@@ -485,6 +481,12 @@ impl LifecycleLexicon {
                 "porady",
                 "trendy",
                 "juz dostępne",
+                "sale",
+                "discount",
+                "deal",
+                "flash sale",
+                "coupon",
+                "promo",
             ],
         )?;
 

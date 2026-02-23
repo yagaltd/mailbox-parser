@@ -2002,6 +2002,12 @@ fn parse_salutation_name(line: &str) -> Option<String> {
         " transaction id",
         " order id",
         " confirmation id",
+        " discount ",
+        " sale ",
+        " offer ",
+        " deal ",
+        " black friday ",
+        " cyber monday ",
     ];
     let mut trimmed = line.trim();
     if trimmed.is_empty() {
@@ -2033,6 +2039,9 @@ fn parse_salutation_name(line: &str) -> Option<String> {
         candidate = &candidate[..pos];
     } else if let Some(pos) = candidate.find(';') {
         candidate = &candidate[..pos];
+    } else if let Some(pos) = format!(" {} ", candidate.to_ascii_lowercase()).find(" from ") {
+        let cut = pos.saturating_sub(1);
+        candidate = candidate.get(..cut).unwrap_or(candidate);
     } else {
         let lower = format!(" {} ", candidate.to_ascii_lowercase());
         for marker in SALUTATION_TAIL_MARKERS {
@@ -3217,7 +3226,21 @@ fn extract_event_hints(
     } else {
         has_meeting_intent && (has_meeting_link || has_meeting_invite_verb)
     };
-    let allow_reservation = has_reservation_intent && has_short_structured_datetime;
+    let has_promo_sale_signal = [
+        "sale",
+        "discount",
+        "% off",
+        "flash sale",
+        "deal",
+        "lightning deal",
+        "coupon",
+        "promo",
+    ]
+    .iter()
+    .any(|k| kind_source.contains(k));
+    let allow_reservation = has_reservation_intent
+        && has_short_structured_datetime
+        && !(is_news_like && has_promo_sale_signal);
 
     let kind = if allow_shipping {
         EventHintKind::Shipping
@@ -3230,6 +3253,7 @@ fn extract_event_hints(
     } else if lexicon.has_event_availability_signal(&kind_source)
         && has_short_structured_datetime
         && has_explicit_schedule_anchor
+        && !(is_news_like && has_promo_sale_signal)
     {
         EventHintKind::Availability
     } else {

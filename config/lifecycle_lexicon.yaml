@@ -366,10 +366,6 @@ event_reservation_intent_patterns:
   - pattern: booking
   - pattern: booked
   - pattern: book your
-  - pattern: check-in
-  - pattern: check in
-  - pattern: check-out
-  - pattern: check out
   - pattern: table for
   - pattern: covers
   - pattern: confirmation id
@@ -454,3 +450,9 @@ event_marketing_list_noise_patterns:
   - pattern: porady
   - pattern: trendy
   - pattern: juz dostępne
+  - pattern: sale
+  - pattern: discount
+  - pattern: deal
+  - pattern: flash sale
+  - pattern: coupon
+  - pattern: promo

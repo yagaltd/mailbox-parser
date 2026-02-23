@@ -129,6 +129,7 @@ Notable heuristics:
 - Newsletters/promotions suppress numbered marketing list noise (for example `1. ... 2. ... 3. ...`) from datetime candidate extraction when no real scheduling structure exists.
 - Newsletter/promotion bullet blocks with marketing/update phrasing (`now live`, `trending`, localized equivalents) are also suppressed unless explicit scheduling anchors exist.
 - Reservation/booking confirmations are classified as `event_hints.kind=reservation` with subtype in `event_hints.reservation_type` (`restaurant`, `hotel`, `spa`, `salon`, `bar`, `other`) when enough reservation intent is detected.
+- Flash-sale/promo windows (`discount`, `deal`, `% off`) are intentionally not treated as reservations in newsletter/promotion context.
 
 ### Mail kind + direction hints
 

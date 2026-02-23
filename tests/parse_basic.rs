@@ -755,6 +755,25 @@ fn parse_contact_hints_salutation_truncates_multilingual_tail_marker() {
 }
 
 #[test]
+fn parse_contact_hints_salutation_truncates_newsletter_from_here_tail() {
+    let msg = concat!(
+        "From: Team <team@example.com>\n",
+        "To: User <user@example.com>\n",
+        "Subject: Newsletter\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Hi, Jordi from MacWhisper here 👋 Black Friday 25% discount If\n",
+        "\n",
+        "Body line.\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert!(parsed.contact_hints.iter().any(|h| {
+        h.source == mailbox_parser::ContactHintSource::Salutation
+            && h.name.as_deref() == Some("Jordi")
+    }));
+}
+
+#[test]
 fn parse_attachment_hints_detect_inline_logo() {
     let msg = concat!(
         "From: Alice <alice@example.com>\n",
@@ -1033,6 +1052,23 @@ fn parse_event_hints_ignores_multilingual_newsletter_availability_noise() {
         "## Tendances du jour\n",
         "* Gemini 3 est maintenant disponible pour tous.\n",
         "* 3 conseils pour aller plus vite avec l'IA.\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert!(parsed.event_hints.is_empty());
+}
+
+#[test]
+fn parse_event_hints_ignores_flash_sale_with_time_window_as_reservation() {
+    let msg = concat!(
+        "From: Promo <promo@example.com>\n",
+        "To: User <user@example.com>\n",
+        "Subject: 30% Flash Sale Ends in 12 Hours\n",
+        "List-Unsubscribe: <https://example.com/unsub>\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Get 30% off during our Lightning Deal, September 27 (11:20 AM-11:20 PM EST).\n",
+        "Our product is available for 30% off now.\n",
+        "Check out our product page now.\n",
     );
     let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
     assert!(parsed.event_hints.is_empty());

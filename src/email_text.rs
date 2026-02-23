@@ -249,14 +249,22 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
         if words.len() == 1 {
             let w = words[0].trim_matches(|c: char| ",.;:()<>[]\"'".contains(c));
             return w.len() >= 2
-                && w.chars().all(|c| c.is_ascii_alphabetic() || c == '-' || c == '\'')
-                && w.chars().next().map(|c| c.is_ascii_uppercase()).unwrap_or(false);
+                && w.chars()
+                    .all(|c| c.is_ascii_alphabetic() || c == '-' || c == '\'')
+                && w.chars()
+                    .next()
+                    .map(|c| c.is_ascii_uppercase())
+                    .unwrap_or(false);
         }
         words.iter().all(|w| {
             let w = w.trim_matches(|c: char| ",.;:()<>[]\"'".contains(c));
             !w.is_empty()
-                && w.chars().all(|c| c.is_ascii_alphabetic() || c == '-' || c == '\'')
-                && w.chars().next().map(|c| c.is_ascii_uppercase()).unwrap_or(false)
+                && w.chars()
+                    .all(|c| c.is_ascii_alphabetic() || c == '-' || c == '\'')
+                && w.chars()
+                    .next()
+                    .map(|c| c.is_ascii_uppercase())
+                    .unwrap_or(false)
         })
     };
     let looks_like_title_only_line = |line: &str| {
@@ -472,8 +480,7 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
                 && WROTE_TOKENS.iter().any(|w| tl.contains(w)))
             || tl_header.starts_with("from:") && tl_header.contains("sent:")
     };
-    let is_header_key_line =
-        |t: &str| starts_with_any(&line_core_header(t), HEADER_KEYS);
+    let is_header_key_line = |t: &str| starts_with_any(&line_core_header(t), HEADER_KEYS);
 
     let looks_like_header_bundle = |idx: usize| -> bool {
         let mut hits = 0usize;
@@ -517,9 +524,16 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
                 continue;
             }
             let tl = line_core_header(t);
-            let rest = ["subject:", "betreff:", "objet:", "oggetto:", "onderwerp:", "temat:"]
-                .iter()
-                .find_map(|p| tl.strip_prefix(p));
+            let rest = [
+                "subject:",
+                "betreff:",
+                "objet:",
+                "oggetto:",
+                "onderwerp:",
+                "temat:",
+            ]
+            .iter()
+            .find_map(|p| tl.strip_prefix(p));
             if let Some(rest) = rest {
                 if rest.trim_start().starts_with("fwd:") || rest.trim_start().starts_with("fw:") {
                     return EmailBlockKind::Forwarded;
@@ -631,16 +645,24 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
             .trim();
         matches!(
             core,
-            "thanks" | "thank you" | "many thanks" | "merci" | "merci beaucoup" | "a+"
-                | "cheers" | "cdlt"
+            "thanks"
+                | "thank you"
+                | "many thanks"
+                | "merci"
+                | "merci beaucoup"
+                | "a+"
+                | "cheers"
+                | "cdlt"
         )
     };
     let mut signature_pos: Option<usize> = None;
     let mut fallback_signature_pos: Option<usize> = None;
 
-    let has_strong_contact_marker = |line: &str| has_email_like(line) || has_phone_like(line) || has_url_like(line);
-    let has_soft_contact_marker =
-        |line: &str| has_address_marker(line) || has_org_or_title_marker(line) || has_cid_or_image_marker(line);
+    let has_strong_contact_marker =
+        |line: &str| has_email_like(line) || has_phone_like(line) || has_url_like(line);
+    let has_soft_contact_marker = |line: &str| {
+        has_address_marker(line) || has_org_or_title_marker(line) || has_cid_or_image_marker(line)
+    };
     let blank_gap_before_pos = |pos: usize| -> usize {
         if pos == 0 {
             return 0;
@@ -654,7 +676,8 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
         if t.len() < 48 {
             return false;
         }
-        let ends_sentence = t.ends_with('.') || t.ends_with('!') || t.ends_with('?') || t.ends_with(':');
+        let ends_sentence =
+            t.ends_with('.') || t.ends_with('!') || t.ends_with('?') || t.ends_with(':');
         let has_many_words = t.split_whitespace().count() >= 8;
         let starts_upper = t
             .chars()
@@ -740,14 +763,12 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
         let signoff_tail_small = tail_lines <= 4;
         let ambiguous_short = is_ambiguous_short_signoff(&core);
         let explicit_signoff_candidate = is_signature_cue_line(&core)
-            && (
-                next_has_name
-                    || has_contact_marker
-                    || (!ambiguous_short
-                        && blank_gap_before_pos(pos) >= 1
-                        && signoff_tail_small
-                        && !looks_like_body_continuation(t))
-            );
+            && (next_has_name
+                || has_contact_marker
+                || (!ambiguous_short
+                    && blank_gap_before_pos(pos) >= 1
+                    && signoff_tail_small
+                    && !looks_like_body_continuation(t)));
         if explicit_signoff_candidate {
             signature_pos = Some(pos);
             break;

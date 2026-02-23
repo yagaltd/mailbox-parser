@@ -2,10 +2,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     EmailBlockKind, ParsedAttachment, ParsedAttachmentHint, ParsedBillingActionHint,
-    ParsedContactHint, ParsedEmail, ParsedDirectionHint, ParsedEventHint,
-    ParsedForwardedMessage, ParsedForwardedSegment, ParsedMailKindHint,
-    ParsedServiceLifecycleHint, ParsedSignatureEntities, ParsedThread, ParsedThreadMessage,
-    ParsedUnsubscribeHint, normalize_message_id, reply_text, segment_email_body,
+    ParsedContactHint, ParsedDirectionHint, ParsedEmail, ParsedEventHint, ParsedForwardedMessage,
+    ParsedForwardedSegment, ParsedMailKindHint, ParsedServiceLifecycleHint,
+    ParsedSignatureEntities, ParsedThread, ParsedThreadMessage, ParsedUnsubscribeHint,
+    normalize_message_id, reply_text, segment_email_body,
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -5,8 +5,8 @@ use std::path::Path;
 use anyhow::{Context, Result, anyhow};
 
 use crate::{
-    MailMessage, MailboxScanError, MailboxScanMessage, MailboxScanReport, parse_rfc822_headers,
-    parse_rfc822_with_options, ParseRfc822Options,
+    MailMessage, MailboxScanError, MailboxScanMessage, MailboxScanReport, ParseRfc822Options,
+    parse_rfc822_headers, parse_rfc822_with_options,
 };
 
 #[derive(Clone, Debug)]

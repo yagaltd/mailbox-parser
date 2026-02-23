@@ -1,6 +1,7 @@
 mod canonical;
 mod email_text;
 mod imap;
+mod lifecycle_lexicon;
 mod mbox;
 
 pub use canonical::{CanonicalAttachment, CanonicalMessage, CanonicalThread, canonicalize_threads};
@@ -13,6 +14,10 @@ pub use imap::{
     ImapSyncResult, ImapSyncState, SyncedEmail, scan_imap_headers, scan_imap_headers_with_progress,
     sync_imap_delta, sync_imap_with_backend,
 };
+pub use lifecycle_lexicon::{
+    LifecycleLexicon, LifecycleRuleMatch, default_lifecycle_lexicon,
+    load_lifecycle_lexicon_from_yaml,
+};
 pub use mbox::{
     MboxMessage, MboxParseError, MboxParseOptions, MboxParseReport, MboxReadOptions,
     iter_mbox_messages, parse_mbox_file, scan_mbox_file_headers_only, scan_mbox_headers,
@@ -23,6 +28,7 @@ use anyhow::{Result, anyhow};
 pub use contacts::EmailAddress;
 use mail_parser::{Message, MessageParser, MimeHeaders};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ParsedEmail {
@@ -506,6 +512,7 @@ pub struct ParsedBillingActionHint {
 #[derive(Clone, Debug, Default)]
 pub struct ParseRfc822Options {
     pub owner_emails: Vec<String>,
+    pub lifecycle_lexicon: Option<Arc<LifecycleLexicon>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -642,6 +649,10 @@ pub fn parse_rfc822_with_options(
     let attachment_hints = derive_attachment_hints(&attachments);
     let event_hints = extract_event_hints(subject.as_deref(), &reply);
     let unsubscribe_hints = extract_unsubscribe_hints(&raw_headers, &body_canonical);
+    let lifecycle_lexicon: &LifecycleLexicon = match options.lifecycle_lexicon.as_deref() {
+        Some(lexicon) => lexicon,
+        None => default_lifecycle_lexicon(),
+    };
     let lifecycle_gate = decide_lifecycle_gate(subject.as_deref(), &body_canonical, &raw_headers);
     let service_lifecycle_hints = extract_service_lifecycle_hints(
         subject.as_deref(),
@@ -649,11 +660,13 @@ pub fn parse_rfc822_with_options(
         &raw_headers,
         &from,
         lifecycle_gate,
+        lifecycle_lexicon,
     );
     let billing_action_hints = extract_billing_action_hints(
         &raw_headers,
         &body_canonical,
         service_lifecycle_hints.first().map(|h| h.kind.clone()),
+        lifecycle_lexicon,
     );
     let mail_kind_hints = extract_mail_kind_hints(
         subject.as_deref(),
@@ -3242,99 +3255,13 @@ fn has_strong_lifecycle_structure(text: &str) -> bool {
     marker_count >= 2
 }
 
-fn has_lifecycle_keyword(text: &str) -> bool {
-    let t = text.to_ascii_lowercase();
-    // Canonical lifecycle/transaction tokens across supported locales.
-    [
-        // English
-        "subscription cancellation",
-        "subscription canceled",
-        "subscription renewed",
-        "membership canceled",
-        "auto-renew",
-        "invoice",
-        "payment failed",
-        "billing",
-        "order confirmation",
-        "ticket confirmation",
-        // French
-        "abonnement",
-        "annulation d'abonnement",
-        "abonnement annul",
-        "renouvellement",
-        "facture",
-        "facturation",
-        "confirmation de commande",
-        "confirmation de billet",
-        // Spanish
-        "suscripción",
-        "suscripcion",
-        "cancelación de suscripción",
-        "cancelacion de suscripcion",
-        "renovación",
-        "renovacion",
-        "factura",
-        "facturación",
-        "facturacion",
-        "pago",
-        "confirmación de pedido",
-        "confirmacion de pedido",
-        "confirmación de entrada",
-        "confirmacion de entrada",
-        // German
-        "abonnement",
-        "mitgliedschaft",
-        "gekündigt",
-        "verlängert",
-        "verlaengert",
-        "rechnung",
-        "abrechnung",
-        "zahlung fehlgeschlagen",
-        "bestellbestätigung",
-        "bestellbestaetigung",
-        "ticketbestätigung",
-        "ticketbestaetigung",
-        // Italian
-        "abbonamento",
-        "annullamento abbonamento",
-        "rinnovo",
-        "fattura",
-        "pagamento non riuscito",
-        "conferma ordine",
-        "conferma biglietto",
-        // Dutch
-        "abonnement",
-        "annulering",
-        "verlenging",
-        "factuur",
-        "betaling mislukt",
-        "bestelbevestiging",
-        "ticketbevestiging",
-        // Polish
-        "subskrypcja",
-        "anulowanie subskrypcji",
-        "odnowienie",
-        "faktura",
-        "platnosc nieudana",
-        "płatność nieudana",
-        "potwierdzenie zamówienia",
-        "potwierdzenie zamowienia",
-        "potwierdzenie biletu",
-    ]
-    .iter()
-    .any(|k| t.contains(k))
-}
-
-fn has_any_token(text: &str, tokens: &[&str]) -> bool {
-    tokens.iter().any(|token| text.contains(token))
-}
-
 fn extract_service_lifecycle_hints(
     subject: Option<&str>,
     body_canonical: &str,
     raw_headers: &std::collections::BTreeMap<String, String>,
     from: &[EmailAddress],
     gate: LifecycleGateDecision,
+    lexicon: &LifecycleLexicon,
 ) -> Vec<ParsedServiceLifecycleHint> {
     let text = format!(
         "{}\n{}",
@@ -3342,48 +3269,13 @@ fn extract_service_lifecycle_hints(
         body_canonical.to_ascii_lowercase()
     );
     let strong_structure = has_strong_lifecycle_structure(&text);
-    let has_keyword = has_lifecycle_keyword(&text);
-    let has_order_or_ticket_confirmation = has_any_token(
-        &text,
-        &[
-            "order confirmation",
-            "ticket confirmation",
-            "bestellbestätigung",
-            "bestellbestaetigung",
-            "ticketbestätigung",
-            "ticketbestaetigung",
-            "conferma ordine",
-            "conferma biglietto",
-            "confirmation de commande",
-            "confirmation de billet",
-            "confirmación de pedido",
-            "confirmacion de pedido",
-            "confirmación de entrada",
-            "confirmacion de entrada",
-            "bestelbevestiging",
-            "ticketbevestiging",
-            "potwierdzenie zamówienia",
-            "potwierdzenie zamowienia",
-            "potwierdzenie biletu",
-        ],
-    );
+    let has_keyword = lexicon.has_lifecycle_keyword(&text);
+    let has_order_or_ticket_confirmation = lexicon.has_confirmation_gate_match(&text);
     let sender = raw_headers
         .get("from")
         .map(|s| s.to_ascii_lowercase())
         .unwrap_or_default();
-    let known_billing_sender = [
-        "stripe",
-        "kajabi",
-        "paddle",
-        "chargebee",
-        "paypal",
-        "xero",
-        "quickbooks",
-        "invoice",
-        "billing",
-    ]
-    .iter()
-    .any(|k| sender.contains(k));
+    let known_billing_sender = lexicon.is_known_billing_sender(&sender);
     let gate_allows = match gate {
         LifecycleGateDecision::Allow => true,
         LifecycleGateDecision::Block => strong_structure && has_keyword,
@@ -3397,139 +3289,17 @@ fn extract_service_lifecycle_hints(
         return Vec::new();
     }
 
-    let mut signals = Vec::new();
-    let kind = if has_any_token(
-        &text,
-        &[
-            "subscription cancellation",
-            "subscription canceled",
-            "has been canceled",
-            "membership canceled",
-            "annulation d'abonnement",
-            "abonnement annul",
-            "cancelación de suscripción",
-            "cancelacion de suscripcion",
-            "gekündigt",
-            "annullamento abbonamento",
-            "anulering",
-            "anulowanie subskrypcji",
-        ],
-    ) {
-        signals.push("token:canceled".to_string());
-        ServiceLifecycleKind::SubscriptionCanceled
-    } else if has_any_token(
-        &text,
-        &[
-            "subscription renewed",
-            "auto-renew",
-            "renouvellement",
-            "renovación",
-            "renovacion",
-            "verlängert",
-            "verlaengert",
-            "rinnovo",
-            "verlenging",
-            "odnowienie",
-        ],
-    ) {
-        signals.push("token:renewed".to_string());
-        ServiceLifecycleKind::SubscriptionRenewed
-    } else if has_any_token(
-        &text,
-        &[
-            "subscription created",
-            "new subscription",
-            "welcome",
-            "bienvenue",
-            "bienvenido",
-            "willkommen",
-            "benvenuto",
-            "welkom",
-            "witamy",
-        ],
-    ) {
-        signals.push("token:created".to_string());
-        ServiceLifecycleKind::SubscriptionCreated
-    } else if has_any_token(
-        &text,
-        &[
-            "membership",
-            "mitgliedschaft",
-            "adhésion",
-            "afiliación",
-            "iscrizione",
-        ],
-    ) && has_any_token(
-        &text,
-        &[
-            "updated",
-            "changed",
-            "plan",
-            "mis à jour",
-            "actualizado",
-            "aktualisiert",
-            "aggiornato",
-            "bijgewerkt",
-            "zaktualizowano",
-        ],
-    ) {
-        signals.push("token:membership_updated".to_string());
-        ServiceLifecycleKind::MembershipUpdated
-    } else if has_any_token(
-        &text,
-        &[
-            "ticket confirmation",
-            "ticketbestätigung",
-            "ticketbestaetigung",
-            "ticketbevestiging",
-            "conferma biglietto",
-            "confirmation de billet",
-            "confirmación de entrada",
-            "confirmacion de entrada",
-            "potwierdzenie biletu",
-        ],
-    ) {
-        signals.push("token:ticket_confirmation".to_string());
-        ServiceLifecycleKind::TicketConfirmation
-    } else if has_any_token(
-        &text,
-        &[
-            "order confirmation",
-            "bestellbestätigung",
-            "bestellbestaetigung",
-            "bestelbevestiging",
-            "conferma ordine",
-            "confirmation de commande",
-            "confirmación de pedido",
-            "confirmacion de pedido",
-            "potwierdzenie zamówienia",
-            "potwierdzenie zamowienia",
-        ],
-    ) {
-        signals.push("token:order_confirmation".to_string());
-        ServiceLifecycleKind::OrderConfirmation
-    } else if text.contains("invoice")
-        || text.contains("payment")
-        || text.contains("charged")
-        || text.contains("billing")
-        || text.contains("facture")
-        || text.contains("facturación")
-        || text.contains("facturacion")
-        || text.contains("factura")
-        || text.contains("rechnung")
-        || text.contains("abrechnung")
-        || text.contains("fattura")
-        || text.contains("factuur")
-        || text.contains("faktura")
-    {
-        signals.push("token:billing_notice".to_string());
-        ServiceLifecycleKind::BillingNotice
-    } else {
-        ServiceLifecycleKind::Unknown
+    let Some(rule_match) = lexicon.classify_lifecycle(&text) else {
+        return Vec::new();
     };
+    let kind = rule_match.kind;
 
     if kind == ServiceLifecycleKind::Unknown {
         return Vec::new();
+    }
+    let mut signals = Vec::new();
+    if let Some(s) = rule_match.signal {
+        signals.push(s);
     }
 
     let mut customer_name = None;
@@ -3615,87 +3385,11 @@ fn extract_billing_action_hints(
     _raw_headers: &std::collections::BTreeMap<String, String>,
     body_canonical: &str,
     related_lifecycle_kind: Option<ServiceLifecycleKind>,
+    lexicon: &LifecycleLexicon,
 ) -> Vec<ParsedBillingActionHint> {
     use std::collections::HashSet;
     let mut out = Vec::new();
     let mut seen = HashSet::new();
-    let lower_tokens = [
-        ("view invoice", BillingActionKind::ViewInvoice),
-        ("invoice", BillingActionKind::ViewInvoice),
-        ("pay now", BillingActionKind::PayNow),
-        ("manage subscription", BillingActionKind::ManageSubscription),
-        ("update payment", BillingActionKind::UpdatePaymentMethod),
-        ("billing portal", BillingActionKind::BillingPortal),
-        ("facture", BillingActionKind::ViewInvoice),
-        ("factura", BillingActionKind::ViewInvoice),
-        ("pago", BillingActionKind::PayNow),
-        ("voir la facture", BillingActionKind::ViewInvoice),
-        ("ver factura", BillingActionKind::ViewInvoice),
-        ("rechnung ansehen", BillingActionKind::ViewInvoice),
-        ("visualizza fattura", BillingActionKind::ViewInvoice),
-        ("factuur bekijken", BillingActionKind::ViewInvoice),
-        ("zobacz faktur", BillingActionKind::ViewInvoice),
-        ("payer maintenant", BillingActionKind::PayNow),
-        ("pagar ahora", BillingActionKind::PayNow),
-        ("jetzt bezahlen", BillingActionKind::PayNow),
-        ("paga ora", BillingActionKind::PayNow),
-        ("nu betalen", BillingActionKind::PayNow),
-        ("zapłać teraz", BillingActionKind::PayNow),
-        ("zaplac teraz", BillingActionKind::PayNow),
-        ("gérer l'abonnement", BillingActionKind::ManageSubscription),
-        ("gerer l'abonnement", BillingActionKind::ManageSubscription),
-        (
-            "gestionar suscripción",
-            BillingActionKind::ManageSubscription,
-        ),
-        (
-            "gestionar suscripcion",
-            BillingActionKind::ManageSubscription,
-        ),
-        (
-            "abonnement verwalten",
-            BillingActionKind::ManageSubscription,
-        ),
-        (
-            "gestisci abbonamento",
-            BillingActionKind::ManageSubscription,
-        ),
-        ("abonnement beheren", BillingActionKind::ManageSubscription),
-        (
-            "zarządzaj subskrypcją",
-            BillingActionKind::ManageSubscription,
-        ),
-        (
-            "zarzadzaj subskrypcja",
-            BillingActionKind::ManageSubscription,
-        ),
-        (
-            "mettre à jour le paiement",
-            BillingActionKind::UpdatePaymentMethod,
-        ),
-        (
-            "mettre a jour le paiement",
-            BillingActionKind::UpdatePaymentMethod,
-        ),
-        ("actualizar pago", BillingActionKind::UpdatePaymentMethod),
-        (
-            "zahlungsmethode aktualisieren",
-            BillingActionKind::UpdatePaymentMethod,
-        ),
-        ("aggiorna pagamento", BillingActionKind::UpdatePaymentMethod),
-        (
-            "betaalmethode bijwerken",
-            BillingActionKind::UpdatePaymentMethod,
-        ),
-        (
-            "zaktualizuj płatność",
-            BillingActionKind::UpdatePaymentMethod,
-        ),
-        (
-            "zaktualizuj platnosc",
-            BillingActionKind::UpdatePaymentMethod,
-        ),
-    ];
 
     for line in body_canonical.lines() {
         let l = line.trim();
@@ -3703,14 +3397,9 @@ fn extract_billing_action_hints(
             continue;
         }
         let ll = l.to_ascii_lowercase();
-        let matched_kind = lower_tokens
-            .iter()
-            .find(|(t, _)| ll.contains(t))
-            .map(|(_, k)| k.clone());
-        if matched_kind.is_none() {
+        let Some(kind) = lexicon.classify_billing_action_line(&ll) else {
             continue;
-        }
-        let kind = matched_kind.unwrap_or(BillingActionKind::Unknown);
+        };
         let urls: Vec<String> = l
             .split_whitespace()
             .filter_map(|tok| {

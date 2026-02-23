@@ -132,7 +132,28 @@ Notable heuristics:
 - `unsubscribe_hints` includes `List-Unsubscribe`/`List-Unsubscribe-Post` and body unsubscribe/manage-preferences links.
 - `service_lifecycle_hints` classifies subscription/membership lifecycle events (`subscription_canceled`, `subscription_renewed`, `order_confirmation`, `ticket_confirmation`, etc.) and extracts key entities like customer/plan/amount when available.
 - `billing_action_hints` captures actionable billing links (`view_invoice`, `pay_now`, `manage_subscription`, etc.) even for newsletter/promo messages where lifecycle classification is intentionally gated.
-- Lifecycle and billing action detection include multilingual token sets for `en`, `fr`, `es`, `de`, `it`, `nl`, and `pl`.
+- Lifecycle and billing action detection are data-driven via `config/lifecycle_lexicon.yaml` (embedded defaults) and include multilingual token sets for `en`, `fr`, `es`, `de`, `it`, `nl`, and `pl`.
+
+### Lifecycle lexicon override
+
+By default, parser uses an embedded lexicon (`config/lifecycle_lexicon.yaml` at build time).
+
+You can load a custom lexicon at runtime and pass it via `ParseRfc822Options`:
+
+```rust
+use std::sync::Arc;
+use mailbox_parser::{load_lifecycle_lexicon_from_yaml, parse_rfc822_with_options, ParseRfc822Options};
+
+let lex = load_lifecycle_lexicon_from_yaml(std::path::Path::new("lifecycle_lexicon.yaml"))?;
+let parsed = parse_rfc822_with_options(
+    &std::fs::read("message.eml")?,
+    &ParseRfc822Options {
+        owner_emails: vec!["owner@example.com".to_string()],
+        lifecycle_lexicon: Some(Arc::new(lex)),
+    },
+)?;
+# Ok::<(), anyhow::Error>(())
+```
 
 ### V3 email ingest/chunking flow
 

@@ -1,9 +1,10 @@
 use mailbox_parser::{
-    BillingActionKind, EmailBlockKind, MailDirection, MailKind, ParseRfc822Options,
-    ServiceLifecycleKind, UnsubscribeKind, UnsubscribeSource, parse_rfc822,
+    BillingActionKind, EmailBlockKind, LifecycleLexicon, MailDirection, MailKind,
+    ParseRfc822Options, ServiceLifecycleKind, UnsubscribeKind, UnsubscribeSource, parse_rfc822,
     parse_rfc822_with_options, reply_text, segment_email_body,
 };
 use pretty_assertions::assert_eq;
+use std::sync::Arc;
 
 fn fixture(path: &str) -> Vec<u8> {
     std::fs::read(path).expect("read fixture")
@@ -1038,6 +1039,7 @@ fn parse_direction_hint_detects_outbound_with_owner_email() {
         msg.as_bytes(),
         &ParseRfc822Options {
             owner_emails: vec!["fitchefaurel@gmail.com".to_string()],
+            lifecycle_lexicon: None,
         },
     )
     .expect("parse");
@@ -1059,6 +1061,7 @@ fn parse_direction_hint_detects_inbound_with_owner_email() {
         msg.as_bytes(),
         &ParseRfc822Options {
             owner_emails: vec!["fitchefaurel@gmail.com".to_string()],
+            lifecycle_lexicon: None,
         },
     )
     .expect("parse");
@@ -1277,5 +1280,57 @@ fn parse_service_lifecycle_hint_detects_ticket_confirmation_multilingual() {
     assert_eq!(
         parsed.service_lifecycle_hints[0].kind,
         ServiceLifecycleKind::TicketConfirmation
+    );
+}
+
+#[test]
+fn parse_service_lifecycle_can_use_custom_lexicon_override() {
+    let custom_yaml = r#"
+version: 1
+known_billing_senders:
+  - stripe
+lifecycle_keyword_patterns:
+  - pattern: custom_invoice_marker
+confirmation_gate_patterns: []
+lifecycle_rules:
+  - id: custom_billing
+    kind: billing_notice
+    priority: 10
+    signal: token:custom_billing
+    any:
+      - pattern: custom_invoice_marker
+billing_action_rules:
+  - id: view_invoice
+    action_kind: view_invoice
+    patterns:
+      - pattern: custom_invoice_marker
+"#;
+    let lexicon = LifecycleLexicon::from_yaml_str(custom_yaml).expect("valid custom lexicon");
+    let msg = concat!(
+        "From: Stripe <billing@stripe.com>\n",
+        "To: User <user@example.com>\n",
+        "Subject: Account update\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Body with custom_invoice_marker and no stock invoice token.\n",
+    );
+    let parsed = parse_rfc822_with_options(
+        msg.as_bytes(),
+        &ParseRfc822Options {
+            owner_emails: vec![],
+            lifecycle_lexicon: Some(Arc::new(lexicon)),
+        },
+    )
+    .expect("parse");
+    assert_eq!(parsed.service_lifecycle_hints.len(), 1);
+    assert_eq!(
+        parsed.service_lifecycle_hints[0].kind,
+        ServiceLifecycleKind::BillingNotice
+    );
+    assert!(
+        parsed
+            .billing_action_hints
+            .iter()
+            .any(|h| h.kind == BillingActionKind::ViewInvoice)
     );
 }

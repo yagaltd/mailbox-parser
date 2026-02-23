@@ -1,0 +1,290 @@
+version: 1
+languages:
+  - en
+  - fr
+  - es
+  - de
+  - it
+  - nl
+  - pl
+
+known_billing_senders:
+  - stripe
+  - kajabi
+  - paddle
+  - chargebee
+  - paypal
+  - xero
+  - quickbooks
+  - invoice
+  - billing
+
+lifecycle_keyword_patterns:
+  - pattern: subscription cancellation
+  - pattern: subscription canceled
+  - pattern: subscription renewed
+  - pattern: membership canceled
+  - pattern: auto-renew
+  - pattern: invoice
+  - pattern: payment failed
+  - pattern: billing
+  - pattern: order confirmation
+  - pattern: ticket confirmation
+  - pattern: abonnement
+  - pattern: annulation d'abonnement
+  - pattern: abonnement annul
+  - pattern: renouvellement
+  - pattern: facture
+  - pattern: facturation
+  - pattern: confirmation de commande
+  - pattern: confirmation de billet
+  - pattern: suscripción
+  - pattern: suscripcion
+  - pattern: cancelación de suscripción
+  - pattern: cancelacion de suscripcion
+  - pattern: renovación
+  - pattern: renovacion
+  - pattern: factura
+  - pattern: facturación
+  - pattern: facturacion
+  - pattern: pago
+  - pattern: confirmación de pedido
+  - pattern: confirmacion de pedido
+  - pattern: confirmación de entrada
+  - pattern: confirmacion de entrada
+  - pattern: mitgliedschaft
+  - pattern: gekündigt
+  - pattern: verlängert
+  - pattern: verlaengert
+  - pattern: rechnung
+  - pattern: abrechnung
+  - pattern: zahlung fehlgeschlagen
+  - pattern: bestellbestätigung
+  - pattern: bestellbestaetigung
+  - pattern: ticketbestätigung
+  - pattern: ticketbestaetigung
+  - pattern: abbonamento
+  - pattern: annullamento abbonamento
+  - pattern: rinnovo
+  - pattern: fattura
+  - pattern: pagamento non riuscito
+  - pattern: conferma ordine
+  - pattern: conferma biglietto
+  - pattern: anulering
+  - pattern: verlenging
+  - pattern: factuur
+  - pattern: betaling mislukt
+  - pattern: bestelbevestiging
+  - pattern: ticketbevestiging
+  - pattern: subskrypcja
+  - pattern: anulowanie subskrypcji
+  - pattern: odnowienie
+  - pattern: faktura
+  - pattern: płatność nieudana
+  - pattern: platnosc nieudana
+  - pattern: potwierdzenie zamówienia
+  - pattern: potwierdzenie zamowienia
+  - pattern: potwierdzenie biletu
+
+confirmation_gate_patterns:
+  - pattern: order confirmation
+  - pattern: ticket confirmation
+  - pattern: bestellbestätigung
+  - pattern: bestellbestaetigung
+  - pattern: ticketbestätigung
+  - pattern: ticketbestaetigung
+  - pattern: conferma ordine
+  - pattern: conferma biglietto
+  - pattern: confirmation de commande
+  - pattern: confirmation de billet
+  - pattern: confirmación de pedido
+  - pattern: confirmacion de pedido
+  - pattern: confirmación de entrada
+  - pattern: confirmacion de entrada
+  - pattern: bestelbevestiging
+  - pattern: ticketbevestiging
+  - pattern: potwierdzenie zamówienia
+  - pattern: potwierdzenie zamowienia
+  - pattern: potwierdzenie biletu
+
+lifecycle_rules:
+  - id: subscription_canceled
+    kind: subscription_canceled
+    priority: 300
+    signal: token:canceled
+    any:
+      - pattern: subscription cancellation
+      - pattern: subscription canceled
+      - pattern: has been canceled
+      - pattern: membership canceled
+      - pattern: annulation d'abonnement
+      - pattern: abonnement annul
+      - pattern: cancelación de suscripción
+      - pattern: cancelacion de suscripcion
+      - pattern: gekündigt
+      - pattern: annullamento abbonamento
+      - pattern: anulering
+      - pattern: anulowanie subskrypcji
+
+  - id: subscription_renewed
+    kind: subscription_renewed
+    priority: 290
+    signal: token:renewed
+    any:
+      - pattern: subscription renewed
+      - pattern: auto-renew
+      - pattern: renouvellement
+      - pattern: renovación
+      - pattern: renovacion
+      - pattern: verlängert
+      - pattern: verlaengert
+      - pattern: rinnovo
+      - pattern: verlenging
+      - pattern: odnowienie
+
+  - id: subscription_created
+    kind: subscription_created
+    priority: 280
+    signal: token:created
+    any:
+      - pattern: subscription created
+      - pattern: new subscription
+      - pattern: welcome
+      - pattern: bienvenue
+      - pattern: bienvenido
+      - pattern: willkommen
+      - pattern: benvenuto
+      - pattern: welkom
+      - pattern: witamy
+
+  - id: membership_updated
+    kind: membership_updated
+    priority: 270
+    signal: token:membership_updated
+    all_groups:
+      -
+        - pattern: membership
+        - pattern: mitgliedschaft
+        - pattern: adhésion
+        - pattern: afiliación
+        - pattern: iscrizione
+      -
+        - pattern: updated
+        - pattern: changed
+        - pattern: plan
+        - pattern: mis à jour
+        - pattern: actualizado
+        - pattern: aktualisiert
+        - pattern: aggiornato
+        - pattern: bijgewerkt
+        - pattern: zaktualizowano
+
+  - id: ticket_confirmation
+    kind: ticket_confirmation
+    priority: 320
+    signal: token:ticket_confirmation
+    any:
+      - pattern: ticket confirmation
+      - pattern: ticketbestätigung
+      - pattern: ticketbestaetigung
+      - pattern: ticketbevestiging
+      - pattern: conferma biglietto
+      - pattern: confirmation de billet
+      - pattern: confirmación de entrada
+      - pattern: confirmacion de entrada
+      - pattern: potwierdzenie biletu
+
+  - id: order_confirmation
+    kind: order_confirmation
+    priority: 310
+    signal: token:order_confirmation
+    any:
+      - pattern: order confirmation
+      - pattern: bestellbestätigung
+      - pattern: bestellbestaetigung
+      - pattern: bestelbevestiging
+      - pattern: conferma ordine
+      - pattern: confirmation de commande
+      - pattern: confirmación de pedido
+      - pattern: confirmacion de pedido
+      - pattern: potwierdzenie zamówienia
+      - pattern: potwierdzenie zamowienia
+
+  - id: billing_notice
+    kind: billing_notice
+    priority: 100
+    signal: token:billing_notice
+    any:
+      - pattern: invoice
+      - pattern: payment
+      - pattern: charged
+      - pattern: billing
+      - pattern: facture
+      - pattern: facturación
+      - pattern: facturacion
+      - pattern: factura
+      - pattern: rechnung
+      - pattern: abrechnung
+      - pattern: fattura
+      - pattern: factuur
+      - pattern: faktura
+
+billing_action_rules:
+  - id: view_invoice
+    action_kind: view_invoice
+    patterns:
+      - pattern: view invoice
+      - pattern: invoice
+      - pattern: facture
+      - pattern: factura
+      - pattern: voir la facture
+      - pattern: ver factura
+      - pattern: rechnung ansehen
+      - pattern: visualizza fattura
+      - pattern: factuur bekijken
+      - pattern: zobacz faktur
+
+  - id: pay_now
+    action_kind: pay_now
+    patterns:
+      - pattern: pay now
+      - pattern: pago
+      - pattern: payer maintenant
+      - pattern: pagar ahora
+      - pattern: jetzt bezahlen
+      - pattern: paga ora
+      - pattern: nu betalen
+      - pattern: zapłać teraz
+      - pattern: zaplac teraz
+
+  - id: manage_subscription
+    action_kind: manage_subscription
+    patterns:
+      - pattern: manage subscription
+      - pattern: gérer l'abonnement
+      - pattern: gerer l'abonnement
+      - pattern: gestionar suscripción
+      - pattern: gestionar suscripcion
+      - pattern: abonnement verwalten
+      - pattern: gestisci abbonamento
+      - pattern: abonnement beheren
+      - pattern: zarządzaj subskrypcją
+      - pattern: zarzadzaj subskrypcja
+
+  - id: update_payment_method
+    action_kind: update_payment_method
+    patterns:
+      - pattern: update payment
+      - pattern: mettre à jour le paiement
+      - pattern: mettre a jour le paiement
+      - pattern: actualizar pago
+      - pattern: zahlungsmethode aktualisieren
+      - pattern: aggiorna pagamento
+      - pattern: betaalmethode bijwerken
+      - pattern: zaktualizuj płatność
+      - pattern: zaktualizuj platnosc
+
+  - id: billing_portal
+    action_kind: billing_portal
+    patterns:
+      - pattern: billing portal

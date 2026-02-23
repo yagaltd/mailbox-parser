@@ -1,12 +1,13 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
+use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow};
 
 use crate::{
-    MailMessage, MailboxScanError, MailboxScanMessage, MailboxScanReport, ParseRfc822Options,
-    parse_rfc822_headers, parse_rfc822_with_options,
+    LifecycleLexicon, MailMessage, MailboxScanError, MailboxScanMessage, MailboxScanReport,
+    ParseRfc822Options, parse_rfc822_headers, parse_rfc822_with_options,
 };
 
 #[derive(Clone, Debug)]
@@ -30,6 +31,7 @@ pub struct MboxParseOptions {
     pub max_messages: Option<usize>,
     pub fail_fast: bool,
     pub owner_emails: Vec<String>,
+    pub lifecycle_lexicon: Option<Arc<LifecycleLexicon>>,
 }
 
 impl Default for MboxParseOptions {
@@ -39,6 +41,7 @@ impl Default for MboxParseOptions {
             max_messages: None,
             fail_fast: false,
             owner_emails: Vec::new(),
+            lifecycle_lexicon: None,
         }
     }
 }
@@ -92,6 +95,7 @@ pub fn parse_mbox_file(path: &Path, options: MboxParseOptions) -> Result<MboxPar
                 &msg.raw,
                 &ParseRfc822Options {
                     owner_emails: options.owner_emails.clone(),
+                    lifecycle_lexicon: options.lifecycle_lexicon.clone(),
                 },
             ) {
                 Ok(parsed) => {

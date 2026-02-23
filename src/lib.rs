@@ -16,7 +16,7 @@ pub use imap::{
 };
 pub use lifecycle_lexicon::{
     LifecycleLexicon, LifecycleRuleMatch, default_lifecycle_lexicon,
-    load_lifecycle_lexicon_from_yaml,
+    load_lifecycle_lexicon_from_yaml, load_lifecycle_lexicon_with_overrides,
 };
 pub use mbox::{
     MboxMessage, MboxParseError, MboxParseOptions, MboxParseReport, MboxReadOptions,

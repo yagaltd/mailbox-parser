@@ -149,7 +149,10 @@ You can load a custom lexicon at runtime and pass it via `ParseRfc822Options`:
 
 ```rust
 use std::sync::Arc;
-use mailbox_parser::{load_lifecycle_lexicon_from_yaml, parse_rfc822_with_options, ParseRfc822Options};
+use mailbox_parser::{
+    load_lifecycle_lexicon_from_yaml, load_lifecycle_lexicon_with_overrides,
+    parse_rfc822_with_options, ParseRfc822Options
+};
 
 let lex = load_lifecycle_lexicon_from_yaml(std::path::Path::new("lifecycle_lexicon.yaml"))?;
 let parsed = parse_rfc822_with_options(
@@ -161,6 +164,28 @@ let parsed = parse_rfc822_with_options(
 )?;
 # Ok::<(), anyhow::Error>(())
 ```
+
+Append-only JSONL overrides are also supported for safe additive updates:
+
+```rust
+let lex = load_lifecycle_lexicon_with_overrides(
+    Some(std::path::Path::new("lifecycle_lexicon.yaml")),
+    std::path::Path::new("lifecycle_override_ops.jsonl"),
+)?;
+# Ok::<(), anyhow::Error>(())
+```
+
+Minimal JSONL line format (one JSON object per line):
+
+```json
+{"op":"add_pattern","target":"event_marketing_list_noise_patterns","pattern":"nouveau token","match_mode":"literal"}
+```
+
+Rules for JSONL ops:
+- add-only (`op=add_pattern`)
+- unknown targets are rejected
+- invalid regex entries are rejected
+- duplicate entries are deduplicated during merge
 
 The same YAML now configures event token families used by `event_hints`, including:
 

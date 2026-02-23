@@ -185,19 +185,56 @@ struct BillingActionRuleEntry {
     patterns: Vec<PatternEntry>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 struct PatternEntry {
     pattern: String,
     #[serde(default)]
     match_mode: MatchMode,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Default)]
+#[derive(Clone, Copy, Debug, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 enum MatchMode {
     #[default]
     Literal,
     Regex,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum LifecycleOverrideOpKind {
+    AddPattern,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum OverrideTarget {
+    LifecycleKeywordPatterns,
+    ConfirmationGatePatterns,
+    EventShippingIntentPatterns,
+    EventShippingStructurePatterns,
+    EventShippingHardStructurePatterns,
+    EventMeetingIntentPatterns,
+    EventMeetingInviteVerbPatterns,
+    EventDeadlinePatterns,
+    EventAvailabilityPatterns,
+    EventReservationIntentPatterns,
+    EventReservationRestaurantPatterns,
+    EventReservationHotelPatterns,
+    EventReservationSpaPatterns,
+    EventReservationSalonPatterns,
+    EventReservationBarPatterns,
+    EventMarketingListNoisePatterns,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LifecycleOverrideOp {
+    op: LifecycleOverrideOpKind,
+    target: OverrideTarget,
+    pattern: String,
+    #[serde(default)]
+    match_mode: MatchMode,
 }
 
 pub fn default_lifecycle_lexicon() -> &'static LifecycleLexicon {
@@ -215,9 +252,49 @@ pub fn load_lifecycle_lexicon_from_yaml(path: &Path) -> Result<LifecycleLexicon>
         .with_context(|| format!("parse lifecycle lexicon {}", path.display()))
 }
 
+pub fn load_lifecycle_lexicon_with_overrides(
+    base_yaml: Option<&Path>,
+    ops_jsonl: &Path,
+) -> Result<LifecycleLexicon> {
+    let base_raw = if let Some(path) = base_yaml {
+        std::fs::read_to_string(path)
+            .with_context(|| format!("read lifecycle lexicon {}", path.display()))?
+    } else {
+        DEFAULT_LEXICON_YAML.to_string()
+    };
+    let ops_raw = std::fs::read_to_string(ops_jsonl)
+        .with_context(|| format!("read lifecycle override ops {}", ops_jsonl.display()))?;
+    LifecycleLexicon::from_yaml_str_with_override_jsonl(&base_raw, &ops_raw).with_context(|| {
+        if let Some(path) = base_yaml {
+            format!(
+                "parse lifecycle lexicon {} with overrides {}",
+                path.display(),
+                ops_jsonl.display()
+            )
+        } else {
+            format!(
+                "parse embedded lifecycle lexicon with overrides {}",
+                ops_jsonl.display()
+            )
+        }
+    })
+}
+
 impl LifecycleLexicon {
     pub fn from_yaml_str(raw: &str) -> Result<Self> {
         let cfg: LexiconConfig = serde_yaml::from_str(raw).context("deserialize yaml")?;
+        Self::from_config(cfg)
+    }
+
+    pub fn from_yaml_str_with_override_jsonl(base_yaml_raw: &str, ops_jsonl_raw: &str) -> Result<Self> {
+        let mut cfg: LexiconConfig =
+            serde_yaml::from_str(base_yaml_raw).context("deserialize yaml")?;
+        let ops = parse_override_ops_jsonl(ops_jsonl_raw)?;
+        apply_override_ops(&mut cfg, &ops)?;
+        Self::from_config(cfg)
+    }
+
+    fn from_config(cfg: LexiconConfig) -> Result<Self> {
         if cfg.version != 1 {
             bail!("unsupported lifecycle lexicon version {}", cfg.version);
         }
@@ -647,6 +724,108 @@ fn compile_patterns(ctx: &str, entries: &[PatternEntry]) -> Result<Vec<PatternMa
     Ok(out)
 }
 
+fn parse_override_ops_jsonl(raw: &str) -> Result<Vec<LifecycleOverrideOp>> {
+    let mut out = Vec::new();
+    for (idx, line) in raw.lines().enumerate() {
+        let l = line.trim();
+        if l.is_empty() || l.starts_with('#') {
+            continue;
+        }
+        let op: LifecycleOverrideOp =
+            serde_json::from_str(l).with_context(|| format!("invalid JSONL op at line {}", idx + 1))?;
+        out.push(op);
+    }
+    Ok(out)
+}
+
+fn normalize_pattern_key(entry: &PatternEntry) -> String {
+    match entry.match_mode {
+        MatchMode::Literal => entry.pattern.trim().to_ascii_lowercase(),
+        MatchMode::Regex => entry.pattern.trim().to_string(),
+    }
+}
+
+fn append_unique_pattern(target: &mut Vec<PatternEntry>, mut entry: PatternEntry) {
+    entry.pattern = entry.pattern.trim().to_string();
+    if entry.pattern.is_empty() {
+        return;
+    }
+    let key = normalize_pattern_key(&entry);
+    if target
+        .iter()
+        .any(|p| p.match_mode == entry.match_mode && normalize_pattern_key(p) == key)
+    {
+        return;
+    }
+    target.push(entry);
+}
+
+fn apply_override_ops(cfg: &mut LexiconConfig, ops: &[LifecycleOverrideOp]) -> Result<()> {
+    for (i, op) in ops.iter().enumerate() {
+        if op.op != LifecycleOverrideOpKind::AddPattern {
+            bail!("override op #{} is not supported", i + 1);
+        }
+        let entry = PatternEntry {
+            pattern: op.pattern.trim().to_string(),
+            match_mode: op.match_mode,
+        };
+        if entry.pattern.is_empty() {
+            bail!("override op #{} pattern is empty", i + 1);
+        }
+        match op.target {
+            OverrideTarget::LifecycleKeywordPatterns => {
+                append_unique_pattern(&mut cfg.lifecycle_keyword_patterns, entry)
+            }
+            OverrideTarget::ConfirmationGatePatterns => {
+                append_unique_pattern(&mut cfg.confirmation_gate_patterns, entry)
+            }
+            OverrideTarget::EventShippingIntentPatterns => {
+                append_unique_pattern(&mut cfg.event_shipping_intent_patterns, entry)
+            }
+            OverrideTarget::EventShippingStructurePatterns => {
+                append_unique_pattern(&mut cfg.event_shipping_structure_patterns, entry)
+            }
+            OverrideTarget::EventShippingHardStructurePatterns => {
+                append_unique_pattern(&mut cfg.event_shipping_hard_structure_patterns, entry)
+            }
+            OverrideTarget::EventMeetingIntentPatterns => {
+                append_unique_pattern(&mut cfg.event_meeting_intent_patterns, entry)
+            }
+            OverrideTarget::EventMeetingInviteVerbPatterns => {
+                append_unique_pattern(&mut cfg.event_meeting_invite_verb_patterns, entry)
+            }
+            OverrideTarget::EventDeadlinePatterns => {
+                append_unique_pattern(&mut cfg.event_deadline_patterns, entry)
+            }
+            OverrideTarget::EventAvailabilityPatterns => {
+                append_unique_pattern(&mut cfg.event_availability_patterns, entry)
+            }
+            OverrideTarget::EventReservationIntentPatterns => {
+                append_unique_pattern(&mut cfg.event_reservation_intent_patterns, entry)
+            }
+            OverrideTarget::EventReservationRestaurantPatterns => {
+                append_unique_pattern(&mut cfg.event_reservation_restaurant_patterns, entry)
+            }
+            OverrideTarget::EventReservationHotelPatterns => {
+                append_unique_pattern(&mut cfg.event_reservation_hotel_patterns, entry)
+            }
+            OverrideTarget::EventReservationSpaPatterns => {
+                append_unique_pattern(&mut cfg.event_reservation_spa_patterns, entry)
+            }
+            OverrideTarget::EventReservationSalonPatterns => {
+                append_unique_pattern(&mut cfg.event_reservation_salon_patterns, entry)
+            }
+            OverrideTarget::EventReservationBarPatterns => {
+                append_unique_pattern(&mut cfg.event_reservation_bar_patterns, entry)
+            }
+            OverrideTarget::EventMarketingListNoisePatterns => {
+                append_unique_pattern(&mut cfg.event_marketing_list_noise_patterns, entry)
+            }
+        }
+    }
+    Ok(())
+}
+
 fn compile_patterns_or_default(
     ctx: &str,
     entries: &[PatternEntry],
@@ -772,5 +951,112 @@ billing_action_rules:
     fn literal_match_uses_word_boundaries() {
         assert!(contains_literal_with_boundaries("pay now please", "pay"));
         assert!(!contains_literal_with_boundaries("galapagos", "pago"));
+    }
+
+    #[test]
+    fn override_jsonl_add_pattern_applies_to_event_group() {
+        let raw = r#"
+version: 1
+lifecycle_keyword_patterns:
+  - pattern: invoice
+confirmation_gate_patterns: []
+lifecycle_rules:
+  - id: r1
+    kind: billing_notice
+    priority: 10
+    any:
+      - pattern: invoice
+billing_action_rules:
+  - id: a1
+    action_kind: view_invoice
+    patterns:
+      - pattern: invoice
+event_deadline_patterns:
+  - pattern: deadline
+"#;
+        let ops = r#"{"op":"add_pattern","target":"event_deadline_patterns","pattern":"cutoffx"}"#;
+        let lx = LifecycleLexicon::from_yaml_str_with_override_jsonl(raw, ops).expect("override");
+        assert!(lx.has_event_deadline_signal("this is a cutoffx for release"));
+    }
+
+    #[test]
+    fn override_jsonl_rejects_unknown_target() {
+        let raw = r#"
+version: 1
+lifecycle_keyword_patterns:
+  - pattern: invoice
+confirmation_gate_patterns: []
+lifecycle_rules:
+  - id: r1
+    kind: billing_notice
+    priority: 10
+    any:
+      - pattern: invoice
+billing_action_rules:
+  - id: a1
+    action_kind: view_invoice
+    patterns:
+      - pattern: invoice
+"#;
+        let ops = r#"{"op":"add_pattern","target":"does_not_exist","pattern":"x"}"#;
+        let err = LifecycleLexicon::from_yaml_str_with_override_jsonl(raw, ops)
+            .expect_err("unknown target must fail")
+            .to_string();
+        assert!(err.contains("invalid JSONL op at line 1"));
+    }
+
+    #[test]
+    fn override_jsonl_rejects_invalid_regex() {
+        let raw = r#"
+version: 1
+lifecycle_keyword_patterns:
+  - pattern: invoice
+confirmation_gate_patterns: []
+lifecycle_rules:
+  - id: r1
+    kind: billing_notice
+    priority: 10
+    any:
+      - pattern: invoice
+billing_action_rules:
+  - id: a1
+    action_kind: view_invoice
+    patterns:
+      - pattern: invoice
+"#;
+        let ops = r#"{"op":"add_pattern","target":"event_deadline_patterns","pattern":"(cutoff","match_mode":"regex"}"#;
+        let err = LifecycleLexicon::from_yaml_str_with_override_jsonl(raw, ops)
+            .expect_err("invalid regex must fail")
+            .to_string();
+        assert!(err.contains("invalid regex"));
+    }
+
+    #[test]
+    fn override_jsonl_dedupes_duplicate_pattern_lines() {
+        let raw = r#"
+version: 1
+lifecycle_keyword_patterns:
+  - pattern: invoice
+confirmation_gate_patterns: []
+lifecycle_rules:
+  - id: r1
+    kind: billing_notice
+    priority: 10
+    any:
+      - pattern: invoice
+billing_action_rules:
+  - id: a1
+    action_kind: view_invoice
+    patterns:
+      - pattern: invoice
+event_deadline_patterns:
+  - pattern: cutoffx
+"#;
+        let ops = r#"
+{"op":"add_pattern","target":"event_deadline_patterns","pattern":"cutoffx"}
+{"op":"add_pattern","target":"event_deadline_patterns","pattern":"cutoffx"}
+"#;
+        let lx = LifecycleLexicon::from_yaml_str_with_override_jsonl(raw, ops).expect("override");
+        assert!(lx.has_event_deadline_signal("cutoffx"));
     }
 }

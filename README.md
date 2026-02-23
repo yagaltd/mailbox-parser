@@ -66,6 +66,7 @@ println!("canonical_threads={}", canonical.len());
 ```
 
 This canonical representation is what `mailbox-parser-cli --json-profile canonical` exports, and what the SDK ingest layers consume.
+For human-oriented nested conversation JSON (root + reply children), use `mailbox-parser-cli --json-profile tree`.
 
 ### End-to-end flow (high level)
 
@@ -231,6 +232,7 @@ println!(
 
 - `mailbox-parser-cli` (in this repo): convenience CLI for IMAP sync + export.
 - `parsers/mailbox-parser/imap.example.toml`: config template for the CLI.
+- `docs/mailbox-parser-json-contract.md`: JSON profile field contract + ingestion guidance.
 
 ## V3 boundary note
 

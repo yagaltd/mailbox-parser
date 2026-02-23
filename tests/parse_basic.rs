@@ -1493,6 +1493,51 @@ billing_action_rules:
 }
 
 #[test]
+fn parse_event_hints_can_use_custom_lexicon_override() {
+    let custom_yaml = r#"
+version: 1
+known_billing_senders:
+  - stripe
+lifecycle_keyword_patterns:
+  - pattern: custom_invoice_marker
+confirmation_gate_patterns: []
+lifecycle_rules:
+  - id: custom_billing
+    kind: billing_notice
+    priority: 10
+    signal: token:custom_billing
+    any:
+      - pattern: custom_invoice_marker
+billing_action_rules:
+  - id: view_invoice
+    action_kind: view_invoice
+    patterns:
+      - pattern: custom_invoice_marker
+event_deadline_patterns:
+  - pattern: cutoffx
+"#;
+    let lexicon = LifecycleLexicon::from_yaml_str(custom_yaml).expect("valid custom lexicon");
+    let msg = concat!(
+        "From: Ops <ops@example.com>\n",
+        "To: User <user@example.com>\n",
+        "Subject: Release planning\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "The cutoffx is 2026-03-10 09:00 CET.\n",
+    );
+    let parsed = parse_rfc822_with_options(
+        msg.as_bytes(),
+        &ParseRfc822Options {
+            owner_emails: vec![],
+            lifecycle_lexicon: Some(Arc::new(lexicon)),
+        },
+    )
+    .expect("parse");
+    assert_eq!(parsed.event_hints.len(), 1);
+    assert_eq!(parsed.event_hints[0].kind, mailbox_parser::EventHintKind::Deadline);
+}
+
+#[test]
 fn parse_signature_fallback_extracts_footer_tail_when_marker_dense() {
     let msg = concat!(
         "From: Vercel <no-reply@vercel.com>\n",

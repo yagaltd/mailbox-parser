@@ -674,16 +674,17 @@ pub fn parse_rfc822_with_options(
         .iter()
         .find(|h| h.is_primary)
         .map(|h| h.kind.clone());
-    let event_hints = extract_event_hints(
-        subject.as_deref(),
-        &reply,
-        provisional_primary_kind.as_ref(),
-    );
-    let unsubscribe_hints = extract_unsubscribe_hints(&raw_headers, &body_canonical);
     let lifecycle_lexicon: &LifecycleLexicon = match options.lifecycle_lexicon.as_deref() {
         Some(lexicon) => lexicon,
         None => default_lifecycle_lexicon(),
     };
+    let event_hints = extract_event_hints(
+        subject.as_deref(),
+        &reply,
+        provisional_primary_kind.as_ref(),
+        lifecycle_lexicon,
+    );
+    let unsubscribe_hints = extract_unsubscribe_hints(&raw_headers, &body_canonical);
     let lifecycle_gate = decide_lifecycle_gate(subject.as_deref(), &body_canonical, &raw_headers);
     let service_lifecycle_hints = extract_service_lifecycle_hints(
         subject.as_deref(),
@@ -2752,6 +2753,7 @@ fn extract_event_hints(
     subject: Option<&str>,
     reply_text: &str,
     primary_mail_kind: Option<&MailKind>,
+    lexicon: &LifecycleLexicon,
 ) -> Vec<ParsedEventHint> {
     let text = reply_text.trim();
     if text.is_empty() {
@@ -3052,20 +3054,7 @@ fn extract_event_hints(
             return false;
         }
         let lower = after_number.to_ascii_lowercase();
-        [
-            "trick",
-            "tips",
-            "ways",
-            "reasons",
-            "mistakes",
-            "lessons",
-            "benefits",
-            "strategy",
-            "strategies",
-            "guide",
-        ]
-        .iter()
-        .any(|t| lower.contains(t))
+        lexicon.has_event_marketing_list_noise(&lower)
     };
     let is_numbered_list_item = |line: &str| -> bool {
         let l = line.trim_start_matches(['#', '-', '*', ' ']).trim_start();
@@ -3086,21 +3075,7 @@ fn extract_event_hints(
                 .next()
                 .map(|tok| tok.chars().all(|c| c.is_ascii_digit()))
                 .unwrap_or(false);
-        has_heading_pattern
-            && [
-                "trick",
-                "tips",
-                "ways",
-                "reasons",
-                "mistakes",
-                "lessons",
-                "benefits",
-                "strategy",
-                "strategies",
-                "guide",
-            ]
-            .iter()
-            .any(|t| lower.contains(t))
+        has_heading_pattern && lexicon.has_event_marketing_list_noise(&lower)
     };
     let mut marketing_list_block_countdown = 0usize;
 
@@ -3167,145 +3142,14 @@ fn extract_event_hints(
         subject.unwrap_or_default().to_ascii_lowercase(),
         text.to_ascii_lowercase()
     );
-    let has_shipping_intent = [
-        "ship",
-        "shipment",
-        "delivery",
-        "pickup",
-        "pick up",
-        "waybill",
-        "air waybill",
-        "courier",
-        "tracking",
-        "label",
-        "dhl",
-        "fedex",
-        "ups",
-    ]
-    .iter()
-    .any(|k| kind_source.contains(k));
-    let has_shipping_structure = [
-        "tracking",
-        "track your order",
-        "order id",
-        "shipment id",
-        "waybill",
-        "air waybill",
-        "awb",
-        "delivered",
-        "eta",
-    ]
-    .iter()
-    .any(|k| kind_source.contains(k));
-    let has_hard_shipping_structure = [
-        "tracking",
-        "track your order",
-        "order id",
-        "shipment id",
-        "waybill",
-        "air waybill",
-        "awb",
-    ]
-    .iter()
-    .any(|k| kind_source.contains(k));
-    let has_meeting_intent = [
-        "meeting",
-        "meet ",
-        "visit",
-        "onboarding",
-        "training",
-        "zoom",
-        "teams",
-        "webex",
-        "calendly",
-    ]
-    .iter()
-    .any(|k| kind_source.contains(k));
-    let has_meeting_invite_verb = [
-        "join",
-        "invited",
-        "invite",
-        "scheduled",
-        "appointment",
-        "call",
-    ]
-    .iter()
-    .any(|k| kind_source.contains(k));
+    let has_shipping_intent = lexicon.has_event_shipping_intent(&kind_source);
+    let has_shipping_structure = lexicon.has_event_shipping_structure(&kind_source);
+    let has_hard_shipping_structure = lexicon.has_event_shipping_hard_structure(&kind_source);
+    let has_meeting_intent = lexicon.has_event_meeting_intent(&kind_source);
+    let has_meeting_invite_verb = lexicon.has_event_meeting_invite_verb(&kind_source);
     let has_meeting_link = !meeting_links.is_empty();
-    let has_reservation_intent = [
-        "reservation",
-        "booking",
-        "booked",
-        "book your",
-        "check-in",
-        "check in",
-        "check-out",
-        "check out",
-        "table for",
-        "covers",
-        "confirmation id",
-        "réservation",
-        "reserva",
-        "reservierung",
-        "prenotazione",
-        "reservering",
-        "rezerwac",
-    ]
-    .iter()
-    .any(|k| kind_source.contains(k));
-    let reservation_type = if [
-        "restaurant",
-        "cafe",
-        "dinner",
-        "lunch",
-        "table",
-        "covers",
-        "reservation at",
-    ]
-    .iter()
-    .any(|k| kind_source.contains(k))
-    {
-        Some(ReservationType::Restaurant)
-    } else if [
-        "hotel",
-        "check-in",
-        "check in",
-        "check-out",
-        "check out",
-        "room",
-        "suite",
-        "stay",
-    ]
-    .iter()
-    .any(|k| kind_source.contains(k))
-    {
-        Some(ReservationType::Hotel)
-    } else if ["spa", "massage", "wellness", "facial"]
-        .iter()
-        .any(|k| kind_source.contains(k))
-    {
-        Some(ReservationType::Spa)
-    } else if [
-        "salon",
-        "haircut",
-        "barber",
-        "stylist",
-        "appointment with",
-    ]
-    .iter()
-    .any(|k| kind_source.contains(k))
-    {
-        Some(ReservationType::Salon)
-    } else if [" bar ", "cocktail", "happy hour", "pub"]
-        .iter()
-        .any(|k| kind_source.contains(k))
-    {
-        Some(ReservationType::Bar)
-    } else if has_reservation_intent {
-        Some(ReservationType::Other)
-    } else {
-        None
-    };
+    let has_reservation_intent = lexicon.has_event_reservation_intent(&kind_source);
+    let reservation_type = lexicon.classify_reservation_type(&kind_source);
     let has_short_structured_datetime = datetime_candidates
         .iter()
         .any(|c| c.has_time || c.raw.len() <= 96);
@@ -3329,14 +3173,9 @@ fn extract_event_hints(
         EventHintKind::Meeting
     } else if allow_reservation {
         EventHintKind::Reservation
-    } else if ["deadline", "due"].iter().any(|k| kind_source.contains(k))
-        && has_short_structured_datetime
-    {
+    } else if lexicon.has_event_deadline_signal(&kind_source) && has_short_structured_datetime {
         EventHintKind::Deadline
-    } else if ["available", "availability"]
-        .iter()
-        .any(|k| kind_source.contains(k))
-        && has_short_structured_datetime
+    } else if lexicon.has_event_availability_signal(&kind_source) && has_short_structured_datetime
     {
         EventHintKind::Availability
     } else {

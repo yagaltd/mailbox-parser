@@ -6,7 +6,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use regex::Regex;
 use serde::Deserialize;
 
-use crate::{BillingActionKind, ServiceLifecycleKind};
+use crate::{BillingActionKind, ReservationType, ServiceLifecycleKind};
 
 const DEFAULT_LEXICON_YAML: &str = include_str!("../config/lifecycle_lexicon.yaml");
 
@@ -23,6 +23,20 @@ pub struct LifecycleLexicon {
     known_billing_senders: Vec<String>,
     lifecycle_rules: Vec<CompiledLifecycleRule>,
     billing_action_rules: Vec<CompiledBillingActionRule>,
+    event_shipping_intent_patterns: Vec<PatternMatcher>,
+    event_shipping_structure_patterns: Vec<PatternMatcher>,
+    event_shipping_hard_structure_patterns: Vec<PatternMatcher>,
+    event_meeting_intent_patterns: Vec<PatternMatcher>,
+    event_meeting_invite_verb_patterns: Vec<PatternMatcher>,
+    event_deadline_patterns: Vec<PatternMatcher>,
+    event_availability_patterns: Vec<PatternMatcher>,
+    event_reservation_intent_patterns: Vec<PatternMatcher>,
+    event_reservation_restaurant_patterns: Vec<PatternMatcher>,
+    event_reservation_hotel_patterns: Vec<PatternMatcher>,
+    event_reservation_spa_patterns: Vec<PatternMatcher>,
+    event_reservation_salon_patterns: Vec<PatternMatcher>,
+    event_reservation_bar_patterns: Vec<PatternMatcher>,
+    event_marketing_list_noise_patterns: Vec<PatternMatcher>,
 }
 
 #[derive(Clone, Debug)]
@@ -35,6 +49,13 @@ impl PatternMatcher {
     fn matches(&self, text: &str) -> bool {
         match self {
             Self::Literal(s) => contains_literal_with_boundaries(text, s),
+            Self::Regex(r) => r.is_match(text),
+        }
+    }
+
+    fn matches_substring(&self, text: &str) -> bool {
+        match self {
+            Self::Literal(s) => text.contains(s),
             Self::Regex(r) => r.is_match(text),
         }
     }
@@ -112,6 +133,34 @@ struct LexiconConfig {
     lifecycle_rules: Vec<LifecycleRuleEntry>,
     #[serde(default)]
     billing_action_rules: Vec<BillingActionRuleEntry>,
+    #[serde(default)]
+    event_shipping_intent_patterns: Vec<PatternEntry>,
+    #[serde(default)]
+    event_shipping_structure_patterns: Vec<PatternEntry>,
+    #[serde(default)]
+    event_shipping_hard_structure_patterns: Vec<PatternEntry>,
+    #[serde(default)]
+    event_meeting_intent_patterns: Vec<PatternEntry>,
+    #[serde(default)]
+    event_meeting_invite_verb_patterns: Vec<PatternEntry>,
+    #[serde(default)]
+    event_deadline_patterns: Vec<PatternEntry>,
+    #[serde(default)]
+    event_availability_patterns: Vec<PatternEntry>,
+    #[serde(default)]
+    event_reservation_intent_patterns: Vec<PatternEntry>,
+    #[serde(default)]
+    event_reservation_restaurant_patterns: Vec<PatternEntry>,
+    #[serde(default)]
+    event_reservation_hotel_patterns: Vec<PatternEntry>,
+    #[serde(default)]
+    event_reservation_spa_patterns: Vec<PatternEntry>,
+    #[serde(default)]
+    event_reservation_salon_patterns: Vec<PatternEntry>,
+    #[serde(default)]
+    event_reservation_bar_patterns: Vec<PatternEntry>,
+    #[serde(default)]
+    event_marketing_list_noise_patterns: Vec<PatternEntry>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -243,6 +292,165 @@ impl LifecycleLexicon {
             bail!("billing_action_rules must not be empty");
         }
 
+        let event_shipping_intent_patterns = compile_patterns_or_default(
+            "event_shipping_intent_patterns",
+            &cfg.event_shipping_intent_patterns,
+            &[
+                "ship",
+                "shipment",
+                "delivery",
+                "pickup",
+                "pick up",
+                "waybill",
+                "air waybill",
+                "courier",
+                "tracking",
+                "label",
+                "dhl",
+                "fedex",
+                "ups",
+            ],
+        )?;
+        let event_shipping_structure_patterns = compile_patterns_or_default(
+            "event_shipping_structure_patterns",
+            &cfg.event_shipping_structure_patterns,
+            &[
+                "tracking",
+                "track your order",
+                "order id",
+                "shipment id",
+                "waybill",
+                "air waybill",
+                "awb",
+                "delivered",
+                "eta",
+            ],
+        )?;
+        let event_shipping_hard_structure_patterns = compile_patterns_or_default(
+            "event_shipping_hard_structure_patterns",
+            &cfg.event_shipping_hard_structure_patterns,
+            &[
+                "tracking",
+                "track your order",
+                "order id",
+                "shipment id",
+                "waybill",
+                "air waybill",
+                "awb",
+            ],
+        )?;
+        let event_meeting_intent_patterns = compile_patterns_or_default(
+            "event_meeting_intent_patterns",
+            &cfg.event_meeting_intent_patterns,
+            &[
+                "meeting",
+                "meet ",
+                "visit",
+                "onboarding",
+                "training",
+                "zoom",
+                "teams",
+                "webex",
+                "calendly",
+            ],
+        )?;
+        let event_meeting_invite_verb_patterns = compile_patterns_or_default(
+            "event_meeting_invite_verb_patterns",
+            &cfg.event_meeting_invite_verb_patterns,
+            &["join", "invited", "invite", "scheduled", "appointment", "call"],
+        )?;
+        let event_deadline_patterns = compile_patterns_or_default(
+            "event_deadline_patterns",
+            &cfg.event_deadline_patterns,
+            &["deadline", "due"],
+        )?;
+        let event_availability_patterns = compile_patterns_or_default(
+            "event_availability_patterns",
+            &cfg.event_availability_patterns,
+            &["available", "availability"],
+        )?;
+        let event_reservation_intent_patterns = compile_patterns_or_default(
+            "event_reservation_intent_patterns",
+            &cfg.event_reservation_intent_patterns,
+            &[
+                "reservation",
+                "booking",
+                "booked",
+                "book your",
+                "check-in",
+                "check in",
+                "check-out",
+                "check out",
+                "table for",
+                "covers",
+                "confirmation id",
+                "réservation",
+                "reserva",
+                "reservierung",
+                "prenotazione",
+                "reservering",
+                "rezerwac",
+            ],
+        )?;
+        let event_reservation_restaurant_patterns = compile_patterns_or_default(
+            "event_reservation_restaurant_patterns",
+            &cfg.event_reservation_restaurant_patterns,
+            &[
+                "restaurant",
+                "cafe",
+                "dinner",
+                "lunch",
+                "table",
+                "covers",
+                "reservation at",
+            ],
+        )?;
+        let event_reservation_hotel_patterns = compile_patterns_or_default(
+            "event_reservation_hotel_patterns",
+            &cfg.event_reservation_hotel_patterns,
+            &[
+                "hotel",
+                "check-in",
+                "check in",
+                "check-out",
+                "check out",
+                "room",
+                "suite",
+                "stay",
+            ],
+        )?;
+        let event_reservation_spa_patterns = compile_patterns_or_default(
+            "event_reservation_spa_patterns",
+            &cfg.event_reservation_spa_patterns,
+            &["spa", "massage", "wellness", "facial"],
+        )?;
+        let event_reservation_salon_patterns = compile_patterns_or_default(
+            "event_reservation_salon_patterns",
+            &cfg.event_reservation_salon_patterns,
+            &["salon", "haircut", "barber", "stylist", "appointment with"],
+        )?;
+        let event_reservation_bar_patterns = compile_patterns_or_default(
+            "event_reservation_bar_patterns",
+            &cfg.event_reservation_bar_patterns,
+            &[" bar ", "cocktail", "happy hour", "pub"],
+        )?;
+        let event_marketing_list_noise_patterns = compile_patterns_or_default(
+            "event_marketing_list_noise_patterns",
+            &cfg.event_marketing_list_noise_patterns,
+            &[
+                "trick",
+                "tips",
+                "ways",
+                "reasons",
+                "mistakes",
+                "lessons",
+                "benefits",
+                "strategy",
+                "strategies",
+                "guide",
+            ],
+        )?;
+
         Ok(Self {
             lifecycle_keywords,
             confirmation_gate_patterns,
@@ -254,6 +462,20 @@ impl LifecycleLexicon {
                 .collect(),
             lifecycle_rules,
             billing_action_rules,
+            event_shipping_intent_patterns,
+            event_shipping_structure_patterns,
+            event_shipping_hard_structure_patterns,
+            event_meeting_intent_patterns,
+            event_meeting_invite_verb_patterns,
+            event_deadline_patterns,
+            event_availability_patterns,
+            event_reservation_intent_patterns,
+            event_reservation_restaurant_patterns,
+            event_reservation_hotel_patterns,
+            event_reservation_spa_patterns,
+            event_reservation_salon_patterns,
+            event_reservation_bar_patterns,
+            event_marketing_list_noise_patterns,
         })
     }
 
@@ -295,6 +517,68 @@ impl LifecycleLexicon {
         })
     }
 
+    fn any_substring_match(patterns: &[PatternMatcher], lower_text: &str) -> bool {
+        patterns.iter().any(|p| p.matches_substring(lower_text))
+    }
+
+    pub fn has_event_shipping_intent(&self, lower_text: &str) -> bool {
+        Self::any_substring_match(&self.event_shipping_intent_patterns, lower_text)
+    }
+
+    pub fn has_event_shipping_structure(&self, lower_text: &str) -> bool {
+        Self::any_substring_match(&self.event_shipping_structure_patterns, lower_text)
+    }
+
+    pub fn has_event_shipping_hard_structure(&self, lower_text: &str) -> bool {
+        Self::any_substring_match(&self.event_shipping_hard_structure_patterns, lower_text)
+    }
+
+    pub fn has_event_meeting_intent(&self, lower_text: &str) -> bool {
+        Self::any_substring_match(&self.event_meeting_intent_patterns, lower_text)
+    }
+
+    pub fn has_event_meeting_invite_verb(&self, lower_text: &str) -> bool {
+        Self::any_substring_match(&self.event_meeting_invite_verb_patterns, lower_text)
+    }
+
+    pub fn has_event_deadline_signal(&self, lower_text: &str) -> bool {
+        Self::any_substring_match(&self.event_deadline_patterns, lower_text)
+    }
+
+    pub fn has_event_availability_signal(&self, lower_text: &str) -> bool {
+        Self::any_substring_match(&self.event_availability_patterns, lower_text)
+    }
+
+    pub fn has_event_reservation_intent(&self, lower_text: &str) -> bool {
+        Self::any_substring_match(&self.event_reservation_intent_patterns, lower_text)
+    }
+
+    pub fn classify_reservation_type(&self, lower_text: &str) -> Option<ReservationType> {
+        if Self::any_substring_match(&self.event_reservation_restaurant_patterns, lower_text) {
+            return Some(ReservationType::Restaurant);
+        }
+        if Self::any_substring_match(&self.event_reservation_hotel_patterns, lower_text) {
+            return Some(ReservationType::Hotel);
+        }
+        if Self::any_substring_match(&self.event_reservation_spa_patterns, lower_text) {
+            return Some(ReservationType::Spa);
+        }
+        if Self::any_substring_match(&self.event_reservation_salon_patterns, lower_text) {
+            return Some(ReservationType::Salon);
+        }
+        if Self::any_substring_match(&self.event_reservation_bar_patterns, lower_text) {
+            return Some(ReservationType::Bar);
+        }
+        if self.has_event_reservation_intent(lower_text) {
+            return Some(ReservationType::Other);
+        }
+        None
+    }
+
+    pub fn has_event_marketing_list_noise(&self, lower_text: &str) -> bool {
+        Self::any_substring_match(&self.event_marketing_list_noise_patterns, lower_text)
+    }
+
     #[cfg(test)]
     fn billing_action_rule_kinds(&self) -> Vec<BillingActionKind> {
         self.billing_action_rules
@@ -322,6 +606,20 @@ fn compile_patterns(ctx: &str, entries: &[PatternEntry]) -> Result<Vec<PatternMa
         out.push(matcher);
     }
     Ok(out)
+}
+
+fn compile_patterns_or_default(
+    ctx: &str,
+    entries: &[PatternEntry],
+    defaults: &[&str],
+) -> Result<Vec<PatternMatcher>> {
+    if entries.is_empty() {
+        return Ok(defaults
+            .iter()
+            .map(|d| PatternMatcher::Literal(d.to_ascii_lowercase()))
+            .collect());
+    }
+    compile_patterns(ctx, entries)
 }
 
 fn parse_lifecycle_kind(kind: &str) -> Result<ServiceLifecycleKind> {

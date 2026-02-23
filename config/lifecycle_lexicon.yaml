@@ -288,3 +288,134 @@ billing_action_rules:
     action_kind: billing_portal
     patterns:
       - pattern: billing portal
+
+event_shipping_intent_patterns:
+  - pattern: ship
+  - pattern: shipment
+  - pattern: delivery
+  - pattern: pickup
+  - pattern: pick up
+  - pattern: waybill
+  - pattern: air waybill
+  - pattern: courier
+  - pattern: tracking
+  - pattern: label
+  - pattern: dhl
+  - pattern: fedex
+  - pattern: ups
+
+event_shipping_structure_patterns:
+  - pattern: tracking
+  - pattern: track your order
+  - pattern: order id
+  - pattern: shipment id
+  - pattern: waybill
+  - pattern: air waybill
+  - pattern: awb
+  - pattern: delivered
+  - pattern: eta
+
+event_shipping_hard_structure_patterns:
+  - pattern: tracking
+  - pattern: track your order
+  - pattern: order id
+  - pattern: shipment id
+  - pattern: waybill
+  - pattern: air waybill
+  - pattern: awb
+
+event_meeting_intent_patterns:
+  - pattern: meeting
+  - pattern: meet
+  - pattern: visit
+  - pattern: onboarding
+  - pattern: training
+  - pattern: zoom
+  - pattern: teams
+  - pattern: webex
+  - pattern: calendly
+
+event_meeting_invite_verb_patterns:
+  - pattern: join
+  - pattern: invited
+  - pattern: invite
+  - pattern: scheduled
+  - pattern: appointment
+  - pattern: call
+
+event_deadline_patterns:
+  - pattern: deadline
+  - pattern: due
+
+event_availability_patterns:
+  - pattern: available
+  - pattern: availability
+
+event_reservation_intent_patterns:
+  - pattern: reservation
+  - pattern: booking
+  - pattern: booked
+  - pattern: book your
+  - pattern: check-in
+  - pattern: check in
+  - pattern: check-out
+  - pattern: check out
+  - pattern: table for
+  - pattern: covers
+  - pattern: confirmation id
+  - pattern: réservation
+  - pattern: reserva
+  - pattern: reservierung
+  - pattern: prenotazione
+  - pattern: reservering
+  - pattern: rezerwac
+
+event_reservation_restaurant_patterns:
+  - pattern: restaurant
+  - pattern: cafe
+  - pattern: dinner
+  - pattern: lunch
+  - pattern: table
+  - pattern: covers
+  - pattern: reservation at
+
+event_reservation_hotel_patterns:
+  - pattern: hotel
+  - pattern: check-in
+  - pattern: check in
+  - pattern: check-out
+  - pattern: check out
+  - pattern: room
+  - pattern: suite
+  - pattern: stay
+
+event_reservation_spa_patterns:
+  - pattern: spa
+  - pattern: massage
+  - pattern: wellness
+  - pattern: facial
+
+event_reservation_salon_patterns:
+  - pattern: salon
+  - pattern: haircut
+  - pattern: barber
+  - pattern: stylist
+  - pattern: appointment with
+
+event_reservation_bar_patterns:
+  - pattern: " bar "
+  - pattern: cocktail
+  - pattern: happy hour
+  - pattern: pub
+
+event_marketing_list_noise_patterns:
+  - pattern: trick
+  - pattern: tips
+  - pattern: ways
+  - pattern: reasons
+  - pattern: mistakes
+  - pattern: lessons
+  - pattern: benefits
+  - pattern: strategy
+  - pattern: strategies
+  - pattern: guide

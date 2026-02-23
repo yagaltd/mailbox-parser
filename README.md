@@ -159,6 +159,15 @@ let parsed = parse_rfc822_with_options(
 # Ok::<(), anyhow::Error>(())
 ```
 
+The same YAML now configures event token families used by `event_hints`, including:
+
+- `event_shipping_*` (intent/structure/hard-structure)
+- `event_meeting_*` (intent/invite verbs)
+- `event_deadline_patterns`
+- `event_availability_patterns`
+- `event_reservation_*` (intent + subtype groups)
+- `event_marketing_list_noise_patterns` (newsletter numbered-list suppression)
+
 ### V3 email ingest/chunking flow
 
 `mailbox-parser` provides segmentation; V3 SDK adapters/builders decide what is embedded.

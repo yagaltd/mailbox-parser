@@ -123,6 +123,7 @@ Notable heuristics:
 - Meeting links are detected from URL host allowlists (for example `zoom.us`, `meet.google.com`, `teams.microsoft.com`) rather than generic words.
 - Timezones require explicit tokens/offsets (`UTC+`, `GMT-`, `CET`, etc.), avoiding substring false positives.
 - Header metadata lines (`From:`, `Sent:`, `Enviado el:`, `Asunto:`, etc.) are ignored before event extraction to reduce quote/header contamination.
+- `location_candidates` are restricted to location-like snippets (venue/address/room/building lines), not arbitrary prose.
 
 ### Mail kind + direction hints
 

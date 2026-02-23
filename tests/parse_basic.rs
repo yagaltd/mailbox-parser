@@ -893,6 +893,52 @@ fn parse_event_hints_ignores_measurement_unit_noise_lines() {
 }
 
 #[test]
+fn parse_event_hints_newsletter_noise_is_gated_out() {
+    let msg = concat!(
+        "From: Newsletter <news@example.com>\n",
+        "To: User <user@example.com>\n",
+        "Subject: Weekly AI digest\n",
+        "List-Unsubscribe: <https://example.com/unsub>\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "This week we discuss market moves and 2026 predictions.\n",
+        "In late 2025 it announced a major organizational overhaul.\n",
+        "Read more in our editorial digest.\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert!(parsed.event_hints.is_empty());
+}
+
+#[test]
+fn parse_event_hints_location_candidates_only_keep_address_like_lines() {
+    let msg = concat!(
+        "From: Ops <ops@example.com>\n",
+        "To: Team <team@example.com>\n",
+        "Subject: Site visit planning\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Meeting on 2026-03-12 10:30 CET.\n",
+        "Room 402, Building 7.\n",
+        "This paragraph mentions campus strategy and growth but is not a location.\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert_eq!(parsed.event_hints.len(), 1);
+    let event = &parsed.event_hints[0];
+    assert!(
+        event
+            .location_candidates
+            .iter()
+            .any(|l| l.contains("Room 402"))
+    );
+    assert!(
+        !event
+            .location_candidates
+            .iter()
+            .any(|l| l.contains("campus strategy"))
+    );
+}
+
+#[test]
 fn signature_extracts_terminal_best_regards_without_contact_card() {
     let text = "Please check this issue with LoRa decoding.\n\nI will test again after lunch.\n\nBest regards,";
     let blocks = segment_email_body(text);
@@ -1221,6 +1267,20 @@ fn parse_billing_action_hints_extracts_url_without_lifecycle() {
 }
 
 #[test]
+fn parse_billing_action_hints_respects_token_boundaries() {
+    let msg = concat!(
+        "From: Prime <no-reply@example.com>\n",
+        "To: User <user@example.com>\n",
+        "Subject: Recommendations\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Discover the Galapagos series and more details at https://example.com/catalog\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert!(parsed.billing_action_hints.is_empty());
+}
+
+#[test]
 fn parse_service_lifecycle_hint_classifies_order_confirmation_not_billing_notice() {
     let msg = concat!(
         "From: Eventbrite <noreply@eventbrite.com>\n",
@@ -1333,4 +1393,33 @@ billing_action_rules:
             .iter()
             .any(|h| h.kind == BillingActionKind::ViewInvoice)
     );
+}
+
+#[test]
+fn parse_signature_fallback_extracts_footer_tail_when_marker_dense() {
+    let msg = concat!(
+        "From: Vercel <no-reply@vercel.com>\n",
+        "To: User <user@example.com>\n",
+        "Subject: Account action\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Please confirm your account action.\n",
+        "Click here to continue: https://example.com/action\n",
+        "\n",
+        "Copyright 2026 Vercel Inc.\n",
+        "All rights reserved.\n",
+        "Manage your notification settings https://example.com/settings\n",
+        "Please do not reply to this email.\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    let blocks = segment_email_body(&parsed.body_canonical);
+    let reply = reply_text(&parsed.body_canonical, &blocks);
+    let sig = blocks
+        .iter()
+        .find(|b| b.kind == EmailBlockKind::Signature)
+        .and_then(|b| parsed.body_canonical.get(b.byte_start..b.byte_end))
+        .unwrap_or("");
+    assert!(sig.to_ascii_lowercase().contains("all rights reserved"));
+    assert!(!reply.to_ascii_lowercase().contains("all rights reserved"));
+    assert!(!reply.to_ascii_lowercase().contains("notification settings"));
 }

@@ -34,10 +34,38 @@ enum PatternMatcher {
 impl PatternMatcher {
     fn matches(&self, text: &str) -> bool {
         match self {
-            Self::Literal(s) => text.contains(s),
+            Self::Literal(s) => contains_literal_with_boundaries(text, s),
             Self::Regex(r) => r.is_match(text),
         }
     }
+}
+
+fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+fn contains_literal_with_boundaries(text: &str, needle: &str) -> bool {
+    if needle.is_empty() {
+        return false;
+    }
+    let mut start = 0usize;
+    while let Some(found) = text[start..].find(needle) {
+        let abs = start + found;
+        let end = abs + needle.len();
+        let left_ok = text[..abs]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !is_word_char(c));
+        let right_ok = text[end..].chars().next().is_none_or(|c| !is_word_char(c));
+        if left_ok && right_ok {
+            return true;
+        }
+        start = abs + needle.len();
+        if start >= text.len() {
+            break;
+        }
+    }
+    false
 }
 
 #[derive(Clone, Debug)]
@@ -401,5 +429,11 @@ billing_action_rules:
             lx.classify_billing_action_line("see invoice details at https://x")
                 .is_some()
         );
+    }
+
+    #[test]
+    fn literal_match_uses_word_boundaries() {
+        assert!(contains_literal_with_boundaries("pay now please", "pay"));
+        assert!(!contains_literal_with_boundaries("galapagos", "pago"));
     }
 }

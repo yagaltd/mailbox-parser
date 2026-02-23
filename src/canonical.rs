@@ -113,7 +113,7 @@ fn canonicalize_email_message(
     email: &ParsedEmail,
 ) -> CanonicalMessage {
     let blocks = segment_email_body(&email.body_canonical);
-    let reply = reply_text(&email.body_canonical, &blocks);
+    let mut reply = reply_text(&email.body_canonical, &blocks);
 
     let mut quoted_blocks = Vec::new();
     let mut forwarded_blocks = Vec::new();
@@ -144,6 +144,12 @@ fn canonicalize_email_message(
                 }
             }
             EmailBlockKind::Reply => {}
+        }
+    }
+    if signature.is_none() {
+        if let Some((trimmed_reply, footer_signature)) = split_signature_footer_fallback(&reply) {
+            reply = trimmed_reply;
+            signature = Some(footer_signature);
         }
     }
 
@@ -197,6 +203,87 @@ fn canonicalize_email_message(
         forwarded_messages: email.forwarded_messages.clone(),
         forwarded_segments: email.forwarded_segments.clone(),
     }
+}
+
+fn split_signature_footer_fallback(reply: &str) -> Option<(String, String)> {
+    let lines: Vec<&str> = reply.lines().collect();
+    if lines.len() < 4 {
+        return None;
+    }
+    let marker_score = |line: &str| -> usize {
+        let lower = line.to_ascii_lowercase();
+        let mut s = 0usize;
+        for token in [
+            "unsubscribe",
+            "manage preferences",
+            "manage your notification settings",
+            "do not reply",
+            "please do not reply",
+            "all rights reserved",
+            "copyright",
+            "view in browser",
+            "powered by",
+            "notification settings",
+            "harap jangan membalas",
+        ] {
+            if lower.contains(token) {
+                s += 1;
+            }
+        }
+        if lower.contains("http://") || lower.contains("https://") {
+            s += 1;
+        }
+        s
+    };
+    let lower_full = reply.to_ascii_lowercase();
+    let footer_markers = [
+        "all rights reserved",
+        "manage your notification settings",
+        "unsubscribe",
+        "do not reply",
+        "please do not reply",
+        "notification settings",
+        "copyright",
+    ];
+    let marker_hits = |s: &str| footer_markers.iter().filter(|m| s.contains(**m)).count();
+    if let Some(cut) = footer_markers
+        .iter()
+        .filter_map(|m| lower_full.find(m))
+        .filter(|idx| *idx > reply.len() / 3)
+        .min()
+    {
+        let suffix = &reply[cut..];
+        let suffix_lower = &lower_full[cut..];
+        if marker_hits(suffix_lower) >= 2
+            || (marker_hits(suffix_lower) >= 1
+                && (suffix_lower.contains("http://") || suffix_lower.contains("https://")))
+        {
+            let head = reply[..cut].trim().to_string();
+            let tail = suffix.trim().to_string();
+            if head.len() >= 24 && tail.len() >= 24 {
+                return Some((head, tail));
+            }
+        }
+    }
+    let start_floor = lines.len().saturating_sub(40);
+    for i in start_floor..lines.len() {
+        let tail = &lines[i..];
+        let non_empty = tail.iter().filter(|l| !l.trim().is_empty()).count();
+        if non_empty < 2 || non_empty > 24 {
+            continue;
+        }
+        let score: usize = tail.iter().map(|l| marker_score(l)).sum();
+        if score < 2 {
+            continue;
+        }
+        let head = lines[..i].join("\n").trim().to_string();
+        let tail_text = tail.join("\n").trim().to_string();
+        if head.len() < 24 || tail_text.len() < 24 {
+            continue;
+        }
+        return Some((head, tail_text));
+    }
+    None
 }
 
 fn canonicalize_attachment(a: &ParsedAttachment) -> CanonicalAttachment {

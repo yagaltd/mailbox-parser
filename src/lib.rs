@@ -633,8 +633,15 @@ pub fn parse_rfc822_with_options(
 
     let salutation =
         first_block_of_kind(&body_canonical, &blocks, crate::EmailBlockKind::Salutation);
-    let signature = first_block_of_kind(&body_canonical, &blocks, crate::EmailBlockKind::Signature);
-    let reply = crate::email_text::reply_text(&body_canonical, &blocks);
+    let mut signature =
+        first_block_of_kind(&body_canonical, &blocks, crate::EmailBlockKind::Signature);
+    let mut reply = crate::email_text::reply_text(&body_canonical, &blocks);
+    if signature.is_none() {
+        if let Some((trimmed_reply, footer_signature)) = split_signature_footer_fallback(&reply) {
+            reply = trimmed_reply;
+            signature = Some(footer_signature);
+        }
+    }
     let forwarded_segments = parse_forwarded_segments_from_blocks(&body_canonical, &blocks);
     let signature_entities = extract_signature_entities(signature.as_deref());
     let contact_hints = extract_contact_hints(
@@ -647,7 +654,17 @@ pub fn parse_rfc822_with_options(
         &signature_entities,
     );
     let attachment_hints = derive_attachment_hints(&attachments);
-    let event_hints = extract_event_hints(subject.as_deref(), &reply);
+    let provisional_mail_kind_hints =
+        extract_mail_kind_hints(subject.as_deref(), &body_canonical, &raw_headers, &[]);
+    let provisional_primary_kind = provisional_mail_kind_hints
+        .iter()
+        .find(|h| h.is_primary)
+        .map(|h| h.kind.clone());
+    let event_hints = extract_event_hints(
+        subject.as_deref(),
+        &reply,
+        provisional_primary_kind.as_ref(),
+    );
     let unsubscribe_hints = extract_unsubscribe_hints(&raw_headers, &body_canonical);
     let lifecycle_lexicon: &LifecycleLexicon = match options.lifecycle_lexicon.as_deref() {
         Some(lexicon) => lexicon,
@@ -1356,6 +1373,88 @@ fn first_block_of_kind(
         if !s.is_empty() {
             return Some(s.to_string());
         }
+    }
+    None
+}
+
+fn split_signature_footer_fallback(reply: &str) -> Option<(String, String)> {
+    let lines: Vec<&str> = reply.lines().collect();
+    if lines.len() < 4 {
+        return None;
+    }
+    let marker_score = |line: &str| -> usize {
+        let lower = line.to_ascii_lowercase();
+        let mut s = 0usize;
+        for token in [
+            "unsubscribe",
+            "manage preferences",
+            "manage your notification settings",
+            "do not reply",
+            "please do not reply",
+            "all rights reserved",
+            "copyright",
+            "view in browser",
+            "powered by",
+            "notification settings",
+            "harap jangan membalas",
+        ] {
+            if lower.contains(token) {
+                s += 1;
+            }
+        }
+        if lower.contains("http://") || lower.contains("https://") {
+            s += 1;
+        }
+        s
+    };
+    let lower_full = reply.to_ascii_lowercase();
+    let footer_markers = [
+        "all rights reserved",
+        "manage your notification settings",
+        "unsubscribe",
+        "do not reply",
+        "please do not reply",
+        "notification settings",
+        "copyright",
+    ];
+    let marker_hits = |s: &str| footer_markers.iter().filter(|m| s.contains(**m)).count();
+    if let Some(cut) = footer_markers
+        .iter()
+        .filter_map(|m| lower_full.find(m))
+        .filter(|idx| *idx > reply.len() / 3)
+        .min()
+    {
+        let suffix = &reply[cut..];
+        let suffix_lower = &lower_full[cut..];
+        if marker_hits(suffix_lower) >= 2
+            || (marker_hits(suffix_lower) >= 1
+                && (suffix_lower.contains("http://") || suffix_lower.contains("https://")))
+        {
+            let head = reply[..cut].trim().to_string();
+            let tail = suffix.trim().to_string();
+            if head.len() >= 24 && tail.len() >= 24 {
+                return Some((head, tail));
+            }
+        }
+    }
+
+    let start_floor = lines.len().saturating_sub(40);
+    for i in start_floor..lines.len() {
+        let tail = &lines[i..];
+        let non_empty = tail.iter().filter(|l| !l.trim().is_empty()).count();
+        if non_empty < 2 || non_empty > 24 {
+            continue;
+        }
+        let score: usize = tail.iter().map(|l| marker_score(l)).sum();
+        if score < 2 {
+            continue;
+        }
+        let head = lines[..i].join("\n").trim().to_string();
+        let tail_text = tail.join("\n").trim().to_string();
+        if head.len() < 24 || tail_text.len() < 24 {
+            continue;
+        }
+        return Some((head, tail_text));
     }
     None
 }
@@ -2581,7 +2680,11 @@ fn derive_attachment_hints(attachments: &[ParsedAttachment]) -> Vec<ParsedAttach
         .collect()
 }
 
-fn extract_event_hints(subject: Option<&str>, reply_text: &str) -> Vec<ParsedEventHint> {
+fn extract_event_hints(
+    subject: Option<&str>,
+    reply_text: &str,
+    primary_mail_kind: Option<&MailKind>,
+) -> Vec<ParsedEventHint> {
     let text = reply_text.trim();
     if text.is_empty() {
         return Vec::new();
@@ -2662,8 +2765,9 @@ fn extract_event_hints(subject: Option<&str>, reply_text: &str) -> Vec<ParsedEve
         "gesendet:",
         "betreff:",
     ];
+    let street_tokens = ["street", "road", "avenue", "boulevard", "lane", "drive"];
     let location_tokens = [
-        "avenue", "street", "road", "site", "venue", "office", "room", "unit", "building", "campus",
+        "venue", "office", "room", "suite", "unit", "building", "campus", "floor",
     ];
     let clean_token = |raw: &str| -> String {
         raw.trim_matches(move |c: char| {
@@ -2808,6 +2912,53 @@ fn extract_event_hints(subject: Option<&str>, reply_text: &str) -> Vec<ParsedEve
             tz_tokens.iter().any(|z| upper == z.to_ascii_uppercase())
         })
     };
+    let is_location_candidate_line = |line: &str| -> bool {
+        let lower = line.to_ascii_lowercase();
+        if lower.contains("http://") || lower.contains("https://") {
+            return false;
+        }
+        if line.len() < 8 || line.len() > 120 {
+            return false;
+        }
+        if lower.starts_with('*') || lower.starts_with('#') || lower.starts_with("- ") {
+            return false;
+        }
+        if lower.contains('[') || lower.contains(']') || lower.contains('(') || lower.contains(')')
+        {
+            return false;
+        }
+        let has_country = [
+            "indonesia",
+            "singapore",
+            "france",
+            "germany",
+            "spain",
+            "italy",
+            "poland",
+            "netherlands",
+            "belgium",
+            "switzerland",
+            "usa",
+            "united states",
+            "uk",
+        ]
+        .iter()
+        .any(|t| lower.contains(t));
+        let has_street_like = street_tokens.iter().any(|t| lower.contains(t))
+            && line.chars().any(|c| c.is_ascii_digit());
+        let has_room_like = location_tokens.iter().any(|t| lower.contains(t))
+            && line.chars().any(|c| c.is_ascii_digit());
+        let has_city_country_like = line.contains(',')
+            && line.len() <= 64
+            && has_country
+            && line
+                .split(',')
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .count()
+                >= 2;
+        has_street_like || has_room_like || has_city_country_like
+    };
 
     for line in text.lines() {
         let l = line.trim();
@@ -2818,12 +2969,14 @@ fn extract_event_hints(subject: Option<&str>, reply_text: &str) -> Vec<ParsedEve
         if header_prefixes.iter().any(|p| lower.starts_with(p)) {
             continue;
         }
+        let likely_noise_prose = l.len() > 180 || (l.len() > 120 && lower.contains("http"));
         let has_time = is_time_like(l);
         let has_date_anchor = has_strong_date_anchor(l);
         let has_explicit_date_shape = l.split_whitespace().any(is_numeric_date_token)
             || has_month_range(l)
             || has_weekday_and_date(l);
         if has_date_anchor
+            && !likely_noise_prose
             && !(has_measurement_unit_noise(l) && !has_time && !has_explicit_date_shape)
         {
             datetime_candidates.push(ParsedDateTimeCandidate {
@@ -2839,11 +2992,13 @@ fn extract_event_hints(subject: Option<&str>, reply_text: &str) -> Vec<ParsedEve
                 meeting_links.push(link);
             }
         }
-        if location_tokens.iter().any(|t| lower.contains(t))
-            || (l.chars().filter(|c| c.is_ascii_digit()).count() >= 4 && lower.contains("france"))
-        {
+        if is_location_candidate_line(l) {
             location_candidates.push(l.to_string());
         }
+    }
+    location_candidates.dedup();
+    if location_candidates.len() > 3 {
+        location_candidates.truncate(3);
     }
 
     if datetime_candidates.is_empty() {
@@ -2872,6 +3027,30 @@ fn extract_event_hints(subject: Option<&str>, reply_text: &str) -> Vec<ParsedEve
     ]
     .iter()
     .any(|k| kind_source.contains(k));
+    let has_shipping_structure = [
+        "tracking",
+        "track your order",
+        "order id",
+        "shipment id",
+        "waybill",
+        "air waybill",
+        "awb",
+        "delivered",
+        "eta",
+    ]
+    .iter()
+    .any(|k| kind_source.contains(k));
+    let has_hard_shipping_structure = [
+        "tracking",
+        "track your order",
+        "order id",
+        "shipment id",
+        "waybill",
+        "air waybill",
+        "awb",
+    ]
+    .iter()
+    .any(|k| kind_source.contains(k));
     let has_meeting_intent = [
         "meeting",
         "meet ",
@@ -2885,21 +3064,57 @@ fn extract_event_hints(subject: Option<&str>, reply_text: &str) -> Vec<ParsedEve
     ]
     .iter()
     .any(|k| kind_source.contains(k));
+    let has_meeting_invite_verb = [
+        "join",
+        "invited",
+        "invite",
+        "scheduled",
+        "appointment",
+        "call",
+    ]
+    .iter()
+    .any(|k| kind_source.contains(k));
+    let has_meeting_link = !meeting_links.is_empty();
+    let has_short_structured_datetime = datetime_candidates
+        .iter()
+        .any(|c| c.has_time || c.raw.len() <= 96);
+    let is_news_like = matches!(
+        primary_mail_kind,
+        Some(MailKind::Newsletter) | Some(MailKind::Promotion)
+    );
+    let allow_shipping = if is_news_like {
+        has_shipping_intent && has_hard_shipping_structure && has_short_structured_datetime
+    } else {
+        has_shipping_intent && has_shipping_structure && has_short_structured_datetime
+    };
+    let allow_meeting = if is_news_like {
+        has_meeting_link
+            && (has_meeting_intent || has_meeting_invite_verb)
+            && has_short_structured_datetime
+    } else {
+        has_meeting_intent && (has_meeting_link || has_meeting_invite_verb)
+    };
 
-    let kind = if has_shipping_intent {
+    let kind = if allow_shipping {
         EventHintKind::Shipping
-    } else if has_meeting_intent {
+    } else if allow_meeting {
         EventHintKind::Meeting
-    } else if ["deadline", "due"].iter().any(|k| kind_source.contains(k)) {
+    } else if ["deadline", "due"].iter().any(|k| kind_source.contains(k))
+        && has_short_structured_datetime
+    {
         EventHintKind::Deadline
     } else if ["available", "availability"]
         .iter()
         .any(|k| kind_source.contains(k))
+        && has_short_structured_datetime
     {
         EventHintKind::Availability
     } else {
         EventHintKind::Generic
     };
+    if is_news_like && kind == EventHintKind::Generic {
+        return Vec::new();
+    }
 
     let has_time = datetime_candidates.iter().any(|c| c.has_time);
     let has_date = !datetime_candidates.is_empty();

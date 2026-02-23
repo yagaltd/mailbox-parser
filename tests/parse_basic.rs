@@ -1,5 +1,6 @@
 use mailbox_parser::{
-    EmailBlockKind, MailDirection, MailKind, ParseRfc822Options, parse_rfc822,
+    EmailBlockKind, MailDirection, MailKind, ParseRfc822Options, ServiceLifecycleKind,
+    UnsubscribeKind, UnsubscribeSource, parse_rfc822,
     parse_rfc822_with_options, reply_text, segment_email_body,
 };
 use pretty_assertions::assert_eq;
@@ -1076,4 +1077,77 @@ fn parse_html_newsletter_cleanup_removes_tail_footer_noise() {
             .to_ascii_lowercase()
             .contains("manage preferences")
     );
+}
+
+#[test]
+fn parse_unsubscribe_hints_from_list_headers_and_body() {
+    let msg = concat!(
+        "From: Newsletter <news@example.com>\n",
+        "To: User <user@example.com>\n",
+        "Subject: Weekly digest\n",
+        "List-Unsubscribe: <https://example.com/unsub>, <mailto:unsubscribe@example.com>\n",
+        "List-Unsubscribe-Post: List-Unsubscribe=One-Click\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "If you prefer, manage preferences here: https://example.com/preferences\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert!(parsed.unsubscribe_hints.iter().any(|h| {
+        h.source == UnsubscribeSource::HeaderListUnsubscribe
+            && h.kind == UnsubscribeKind::Url
+            && h.url.as_deref() == Some("https://example.com/unsub")
+    }));
+    assert!(parsed.unsubscribe_hints.iter().any(|h| {
+        h.source == UnsubscribeSource::HeaderListUnsubscribe
+            && h.kind == UnsubscribeKind::MailTo
+            && h.email.as_deref() == Some("unsubscribe@example.com")
+    }));
+    assert!(parsed.unsubscribe_hints.iter().any(|h| {
+        h.source == UnsubscribeSource::HeaderListUnsubscribePost
+            && h.kind == UnsubscribeKind::OneClick
+    }));
+}
+
+#[test]
+fn parse_service_lifecycle_hint_detects_subscription_cancellation() {
+    let msg = concat!(
+        "From: Kajabi <notifications@kajabi.com>\n",
+        "To: Owner <owner@example.com>\n",
+        "Subject: [NOTIFICATION] Subscription cancellation\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "We're sending you an email to let you know that the following subscription has been canceled.\n",
+        "Customer name: Julia Samokhvalova\n",
+        "Customer email: julia.samx@gmail.com\n",
+        "Offer: 6 month Flow with Mira Membership\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert_eq!(parsed.service_lifecycle_hints.len(), 1);
+    let hint = &parsed.service_lifecycle_hints[0];
+    assert_eq!(hint.kind, ServiceLifecycleKind::SubscriptionCanceled);
+    assert_eq!(hint.customer_email.as_deref(), Some("julia.samx@gmail.com"));
+    assert!(
+        hint.plan_name
+            .as_deref()
+            .is_some_and(|p| p.contains("Mira Membership"))
+    );
+}
+
+#[test]
+fn parse_cleanup_strips_reddit_digest_footer_tail() {
+    let msg = concat!(
+        "From: Reddit <noreply@redditmail.com>\n",
+        "To: Aurel <fitchefaurel@gmail.com>\n",
+        "Subject: digest\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Here are your posts.\n",
+        "Read More\n",
+        "This email was intended for u/fitchefaurel.\n",
+        "Unsubscribefrom daily digest messages, or visit your settings to manage\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert!(parsed.body_canonical.contains("Here are your posts."));
+    assert!(!parsed.body_canonical.contains("This email was intended for"));
+    assert!(!parsed.body_canonical.contains("Unsubscribefrom daily digest messages"));
 }

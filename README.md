@@ -25,6 +25,8 @@ Rust library for:
   - `event_hints` (meeting/shipping/deadline/availability candidates + completeness)
   - `mail_kind_hints` (personal/newsletter/promotion/transactional/notification inference)
   - `direction_hint` (inbound/outbound/self/unknown when owner email context is provided)
+  - `unsubscribe_hints` (header/body unsubscribe URL and one-click metadata)
+  - `service_lifecycle_hints` (subscription/membership lifecycle + extracted entities)
 
 ```rust
 use mailbox_parser::parse_rfc822;
@@ -57,7 +59,7 @@ For a stable export/ingest format, you can convert `ParsedThread` → `Canonical
 - `CanonicalMessage.quoted_blocks` / `forwarded_blocks` / `signature`: preserved separately
 - `CanonicalMessage.forwarded_segments`: structured extraction of forwarded content (headers + nested body parts)
 - `CanonicalMessage.salutation` and `CanonicalMessage.disclaimer_blocks`: preserved when detected
-- `CanonicalMessage.contact_hints` / `signature_entities` / `attachment_hints` / `event_hints` / `mail_kind_hints` / `direction_hint`: passthrough parser hints for backend enrichment pipelines
+- `CanonicalMessage.contact_hints` / `signature_entities` / `attachment_hints` / `event_hints` / `mail_kind_hints` / `direction_hint` / `unsubscribe_hints` / `service_lifecycle_hints`: passthrough parser hints for backend enrichment pipelines
 
 ```rust
 use mailbox_parser::{canonicalize_threads, thread_messages};
@@ -126,6 +128,8 @@ Notable heuristics:
 - `mail_kind_hints` is deterministic and confidence-based (`personal`, `newsletter`, `promotion`, `transactional`, `notification`, `unknown`), using header + body signals.
 - `direction_hint` is emitted only when owner identity is known (for example via CLI `--owner-email`). It classifies messages as `inbound`, `outbound`, `self_message`, or `unknown`.
 - HTML-heavy newsletter/promotional emails apply footer cleanup before segmentation to reduce unsubscribe/footer leakage in `body_canonical` and downstream `reply_text`.
+- `unsubscribe_hints` includes `List-Unsubscribe`/`List-Unsubscribe-Post` and body unsubscribe/manage-preferences links.
+- `service_lifecycle_hints` classifies subscription/membership lifecycle events (`subscription_canceled`, `subscription_renewed`, etc.) and extracts key entities like customer/plan/amount when available.
 
 ### V3 email ingest/chunking flow
 

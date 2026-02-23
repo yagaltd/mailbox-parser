@@ -56,6 +56,10 @@ pub struct ParsedEmail {
     pub mail_kind_hints: Vec<ParsedMailKindHint>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub direction_hint: Option<ParsedDirectionHint>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unsubscribe_hints: Vec<ParsedUnsubscribeHint>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub service_lifecycle_hints: Vec<ParsedServiceLifecycleHint>,
 
     #[serde(default)]
     pub raw_headers: std::collections::BTreeMap<String, String>,
@@ -370,6 +374,88 @@ pub struct ParsedDirectionHint {
     pub reason: Option<String>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UnsubscribeSource {
+    HeaderListUnsubscribe,
+    HeaderListUnsubscribePost,
+    BodyLink,
+    BodyText,
+}
+impl Default for UnsubscribeSource {
+    fn default() -> Self {
+        Self::BodyText
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UnsubscribeKind {
+    OneClick,
+    Url,
+    MailTo,
+    ManagePreferences,
+    Unknown,
+}
+impl Default for UnsubscribeKind {
+    fn default() -> Self {
+        Self::Unknown
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct ParsedUnsubscribeHint {
+    pub kind: UnsubscribeKind,
+    pub source: UnsubscribeSource,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub confidence: HintConfidence,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ServiceLifecycleKind {
+    SubscriptionCreated,
+    SubscriptionRenewed,
+    SubscriptionCanceled,
+    MembershipUpdated,
+    BillingNotice,
+    Unknown,
+}
+impl Default for ServiceLifecycleKind {
+    fn default() -> Self {
+        Self::Unknown
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct ParsedServiceLifecycleHint {
+    pub kind: ServiceLifecycleKind,
+    #[serde(default)]
+    pub confidence: HintConfidence,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub customer_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub customer_email: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub amount_raw: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub currency: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_date_raw: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub signals: Vec<String>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct ParseRfc822Options {
     pub owner_emails: Vec<String>,
@@ -504,7 +590,19 @@ pub fn parse_rfc822_with_options(bytes: &[u8], options: &ParseRfc822Options) -> 
     );
     let attachment_hints = derive_attachment_hints(&attachments);
     let event_hints = extract_event_hints(subject.as_deref(), &reply);
-    let mail_kind_hints = extract_mail_kind_hints(subject.as_deref(), &body_canonical, &raw_headers);
+    let unsubscribe_hints = extract_unsubscribe_hints(&raw_headers, &body_canonical);
+    let service_lifecycle_hints = extract_service_lifecycle_hints(
+        subject.as_deref(),
+        &body_canonical,
+        &raw_headers,
+        &from,
+    );
+    let mail_kind_hints = extract_mail_kind_hints(
+        subject.as_deref(),
+        &body_canonical,
+        &raw_headers,
+        &service_lifecycle_hints,
+    );
     let direction_hint = infer_direction_hint(
         &from,
         &to,
@@ -538,6 +636,8 @@ pub fn parse_rfc822_with_options(bytes: &[u8], options: &ParseRfc822Options) -> 
         event_hints,
         mail_kind_hints,
         direction_hint,
+        unsubscribe_hints,
+        service_lifecycle_hints,
         raw_headers,
     })
 }
@@ -932,6 +1032,19 @@ fn cleanup_html_boilerplate(text: &str) -> String {
         return text.trim().to_string();
     }
 
+    let filtered: Vec<&str> = lines
+        .iter()
+        .copied()
+        .filter(|line| {
+            let l = line.trim().to_ascii_lowercase();
+            !(l.starts_with("view image:")
+                || l.starts_with("follow image link:")
+                || l == "caption:"
+                || l.starts_with("caption:"))
+        })
+        .collect();
+    let lines = if filtered.is_empty() { lines } else { filtered };
+
     let is_strong_footer_line = |line: &str| -> bool {
         let l = line.trim().to_ascii_lowercase();
         l.contains("unsubscribe")
@@ -981,11 +1094,42 @@ fn cleanup_html_boilerplate(text: &str) -> String {
         lines
     };
 
+    let reddit_tail_markers = [
+        "this email was intended for",
+        "unsubscribefrom daily digest messages",
+        "visit your settings to manage",
+    ];
+    let tail_start = kept.len() / 2;
+    for i in tail_start..kept.len() {
+        let l = kept[i].trim().to_ascii_lowercase();
+        if reddit_tail_markers.iter().any(|m| l.contains(m)) {
+            kept.truncate(i);
+            break;
+        }
+    }
+
     while kept.last().is_some_and(|l| l.trim().is_empty()) {
         kept.pop();
     }
 
-    kept.join("\n").trim().to_string()
+    let mut out = kept.join("\n").trim().to_string();
+    if !out.is_empty() {
+        let lower = out.to_ascii_lowercase();
+        let cutoff_markers = [
+            "this email was intended for",
+            "unsubscribefrom daily digest messages",
+            "visit your settings to manage",
+        ];
+        for marker in cutoff_markers {
+            if let Some(pos) = lower.find(marker) {
+                if pos >= lower.len() / 3 {
+                    out.truncate(pos);
+                    break;
+                }
+            }
+        }
+    }
+    out.trim().to_string()
 }
 
 fn collect_attachments_and_forwards(
@@ -2633,6 +2777,7 @@ fn extract_mail_kind_hints(
     subject: Option<&str>,
     body_canonical: &str,
     raw_headers: &std::collections::BTreeMap<String, String>,
+    service_lifecycle_hints: &[ParsedServiceLifecycleHint],
 ) -> Vec<ParsedMailKindHint> {
     use std::collections::HashMap;
     let mut scores: HashMap<MailKind, i32> = HashMap::new();
@@ -2723,6 +2868,16 @@ fn extract_mail_kind_hints(
             add(MailKind::Notification, 1, "header:from_automation");
         }
     }
+    if service_lifecycle_hints
+        .iter()
+        .any(|h| h.confidence == HintConfidence::High && h.kind != ServiceLifecycleKind::Unknown)
+    {
+        add(
+            MailKind::Transactional,
+            3,
+            "service_lifecycle:high_confidence",
+        );
+    }
 
     let mut ordered: Vec<(MailKind, i32, Vec<String>)> = scores
         .into_iter()
@@ -2767,6 +2922,262 @@ fn extract_mail_kind_hints(
         }
     }
     out
+}
+
+fn extract_unsubscribe_hints(
+    raw_headers: &std::collections::BTreeMap<String, String>,
+    body_canonical: &str,
+) -> Vec<ParsedUnsubscribeHint> {
+    use std::collections::HashSet;
+    let mut out = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+
+    let mut push_hint = |hint: ParsedUnsubscribeHint| {
+        let key = format!(
+            "{:?}|{:?}|{}|{}",
+            hint.source,
+            hint.kind,
+            hint.url.clone().unwrap_or_default(),
+            hint.email.clone().unwrap_or_default()
+        );
+        if seen.insert(key) {
+            out.push(hint);
+        }
+    };
+
+    let parse_unsub_header = |value: &str| -> (Vec<String>, Vec<String>) {
+        let mut urls = Vec::new();
+        let mut mails = Vec::new();
+        for part in value.split(',') {
+            let p = part.trim().trim_matches(['<', '>']);
+            if p.is_empty() {
+                continue;
+            }
+            if let Some(addr) = p.strip_prefix("mailto:") {
+                mails.push(addr.trim().to_string());
+            } else if p.starts_with("http://") || p.starts_with("https://") {
+                urls.push(p.to_string());
+            }
+        }
+        (urls, mails)
+    };
+
+    if let Some(v) = raw_headers.get("list-unsubscribe") {
+        let (urls, mails) = parse_unsub_header(v);
+        for u in urls {
+            push_hint(ParsedUnsubscribeHint {
+                kind: UnsubscribeKind::Url,
+                source: UnsubscribeSource::HeaderListUnsubscribe,
+                url: Some(u),
+                email: None,
+                label: Some("list_unsubscribe".to_string()),
+                confidence: HintConfidence::High,
+            });
+        }
+        for m in mails {
+            push_hint(ParsedUnsubscribeHint {
+                kind: UnsubscribeKind::MailTo,
+                source: UnsubscribeSource::HeaderListUnsubscribe,
+                url: None,
+                email: Some(m),
+                label: Some("list_unsubscribe".to_string()),
+                confidence: HintConfidence::High,
+            });
+        }
+    }
+    if let Some(v) = raw_headers.get("list-unsubscribe-post") {
+        let lower = v.to_ascii_lowercase();
+        push_hint(ParsedUnsubscribeHint {
+            kind: if lower.contains("one-click") {
+                UnsubscribeKind::OneClick
+            } else {
+                UnsubscribeKind::Unknown
+            },
+            source: UnsubscribeSource::HeaderListUnsubscribePost,
+            url: None,
+            email: None,
+            label: Some(v.clone()),
+            confidence: HintConfidence::High,
+        });
+    }
+
+    let extract_urls = |s: &str| -> Vec<String> {
+        s.split_whitespace()
+            .filter_map(|tok| {
+                let t = tok.trim_matches(|c: char| {
+                    c.is_whitespace()
+                        || matches!(c, '<' | '>' | '(' | ')' | '[' | ']' | '"' | '\'' | ',')
+                });
+                if t.starts_with("http://") || t.starts_with("https://") {
+                    Some(t.to_string())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    };
+
+    for line in body_canonical.lines() {
+        let l = line.trim();
+        if l.is_empty() {
+            continue;
+        }
+        let lower = l.to_ascii_lowercase();
+        if lower.contains("unsubscribe") || lower.contains("manage preferences") {
+            let urls = extract_urls(l);
+            if urls.is_empty() {
+                push_hint(ParsedUnsubscribeHint {
+                    kind: UnsubscribeKind::Unknown,
+                    source: UnsubscribeSource::BodyText,
+                    url: None,
+                    email: None,
+                    label: Some(l.to_string()),
+                    confidence: HintConfidence::Low,
+                });
+            } else {
+                for u in urls {
+                    push_hint(ParsedUnsubscribeHint {
+                        kind: if lower.contains("manage preferences") {
+                            UnsubscribeKind::ManagePreferences
+                        } else {
+                            UnsubscribeKind::Url
+                        },
+                        source: UnsubscribeSource::BodyLink,
+                        url: Some(u),
+                        email: None,
+                        label: Some("unsubscribe_link".to_string()),
+                        confidence: HintConfidence::Medium,
+                    });
+                }
+            }
+        }
+    }
+
+    out
+}
+
+fn extract_service_lifecycle_hints(
+    subject: Option<&str>,
+    body_canonical: &str,
+    raw_headers: &std::collections::BTreeMap<String, String>,
+    from: &[EmailAddress],
+) -> Vec<ParsedServiceLifecycleHint> {
+    let text = format!(
+        "{}\n{}",
+        subject.unwrap_or_default().to_ascii_lowercase(),
+        body_canonical.to_ascii_lowercase()
+    );
+
+    let mut signals = Vec::new();
+    let kind = if text.contains("subscription cancellation")
+        || text.contains("has been canceled")
+        || text.contains("subscription has been canceled")
+        || text.contains("membership canceled")
+    {
+        signals.push("token:canceled".to_string());
+        ServiceLifecycleKind::SubscriptionCanceled
+    } else if text.contains("subscription renewed")
+        || text.contains("renewed")
+        || text.contains("auto-renew")
+    {
+        signals.push("token:renewed".to_string());
+        ServiceLifecycleKind::SubscriptionRenewed
+    } else if text.contains("subscription created")
+        || text.contains("welcome")
+        || text.contains("new subscription")
+    {
+        signals.push("token:created".to_string());
+        ServiceLifecycleKind::SubscriptionCreated
+    } else if text.contains("membership")
+        && (text.contains("updated") || text.contains("changed") || text.contains("plan"))
+    {
+        signals.push("token:membership_updated".to_string());
+        ServiceLifecycleKind::MembershipUpdated
+    } else if text.contains("invoice")
+        || text.contains("payment")
+        || text.contains("charged")
+        || text.contains("billing")
+    {
+        signals.push("token:billing_notice".to_string());
+        ServiceLifecycleKind::BillingNotice
+    } else {
+        ServiceLifecycleKind::Unknown
+    };
+
+    if kind == ServiceLifecycleKind::Unknown {
+        return Vec::new();
+    }
+
+    let mut customer_name = None;
+    let mut customer_email = None;
+    let mut plan_name = None;
+    let mut amount_raw = None;
+    let mut currency = None;
+    let mut effective_date_raw = None;
+
+    for line in body_canonical.lines() {
+        let l = line.trim();
+        if l.is_empty() {
+            continue;
+        }
+        let lower = l.to_ascii_lowercase();
+        if lower.starts_with("customer name:") {
+            customer_name = Some(l["customer name:".len()..].trim().to_string());
+        } else if lower.starts_with("customer email:") {
+            customer_email = Some(l["customer email:".len()..].trim().to_string());
+        } else if lower.starts_with("offer:") || lower.starts_with("plan:") {
+            let idx = l.find(':').unwrap_or(0);
+            plan_name = Some(l[idx + 1..].trim().to_string());
+        } else if lower.starts_with("date:")
+            || lower.starts_with("effective date:")
+            || lower.starts_with("renewal date:")
+        {
+            let idx = l.find(':').unwrap_or(0);
+            effective_date_raw = Some(l[idx + 1..].trim().to_string());
+        } else if lower.contains('$')
+            || lower.contains(" usd")
+            || lower.contains(" eur")
+            || lower.contains(" gbp")
+        {
+            amount_raw = Some(l.to_string());
+            currency = if lower.contains('$') || lower.contains(" usd") {
+                Some("USD".to_string())
+            } else if lower.contains(" eur") {
+                Some("EUR".to_string())
+            } else if lower.contains(" gbp") {
+                Some("GBP".to_string())
+            } else {
+                None
+            };
+        }
+    }
+
+    let provider = raw_headers
+        .get("from")
+        .and_then(|f| f.split('@').nth(1))
+        .map(|s| s.trim().trim_matches('>').to_string())
+        .or_else(|| from.first().map(|a| a.address.clone()));
+
+    vec![ParsedServiceLifecycleHint {
+        kind: kind.clone(),
+        confidence: match kind {
+            ServiceLifecycleKind::SubscriptionCanceled | ServiceLifecycleKind::SubscriptionRenewed => {
+                HintConfidence::High
+            }
+            ServiceLifecycleKind::SubscriptionCreated
+            | ServiceLifecycleKind::MembershipUpdated
+            | ServiceLifecycleKind::BillingNotice => HintConfidence::Medium,
+            ServiceLifecycleKind::Unknown => HintConfidence::Low,
+        },
+        provider,
+        plan_name,
+        customer_name,
+        customer_email,
+        amount_raw,
+        currency,
+        effective_date_raw,
+        signals,
+    }]
 }
 
 fn infer_direction_hint(

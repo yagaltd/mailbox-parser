@@ -25,6 +25,8 @@ pub struct ProjectionNode {
     pub node_type: String,
     pub label: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub snippet: Option<String>,
 }
 
@@ -164,6 +166,7 @@ pub fn build_graph(rows: &[ProjectionRow], group: &str, layer: &str) -> (Vec<Pro
                 id: thread_id.clone(),
                 node_type: "thread".to_string(),
                 label: row.subject.clone(),
+                body: None,
                 snippet: None,
             });
         }
@@ -172,6 +175,7 @@ pub fn build_graph(rows: &[ProjectionRow], group: &str, layer: &str) -> (Vec<Pro
                 id: msg_id.clone(),
                 node_type: "message".to_string(),
                 label: row.subject.clone(),
+                body: Some(row.reply_text.clone()),
                 snippet: Some(row.reply_text.chars().take(240).collect()),
             });
         }
@@ -196,6 +200,7 @@ pub fn build_graph(rows: &[ProjectionRow], group: &str, layer: &str) -> (Vec<Pro
                     id: pid.clone(),
                     node_type: "person".to_string(),
                     label: email.clone(),
+                    body: None,
                     snippet: None,
                 });
             }
@@ -215,6 +220,7 @@ pub fn build_graph(rows: &[ProjectionRow], group: &str, layer: &str) -> (Vec<Pro
                         id: uid.clone(),
                         node_type: "url".to_string(),
                         label: url.clone(),
+                        body: None,
                         snippet: None,
                     });
                 }
@@ -234,6 +240,7 @@ pub fn build_graph(rows: &[ProjectionRow], group: &str, layer: &str) -> (Vec<Pro
                         id: did.clone(),
                         node_type: "date".to_string(),
                         label: d,
+                        body: None,
                         snippet: None,
                     });
                 }
@@ -388,5 +395,24 @@ mod tests {
         let out = apply_query(rows, &q);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].message_key, "m1");
+    }
+
+    #[test]
+    fn graph_message_node_carries_full_body_and_snippet() {
+        let rows = vec![ProjectionRow {
+            thread_id: "t1".into(),
+            message_key: "m1".into(),
+            subject: "Subject".into(),
+            date: "2026-01-02T00:00:00Z".into(),
+            reply_text: "Line 1\nLine 2".into(),
+            ..Default::default()
+        }];
+        let (nodes, _links) = build_graph(&rows, "thread", "all");
+        let message_node = nodes
+            .into_iter()
+            .find(|n| n.id == "M:m1")
+            .expect("message node");
+        assert_eq!(message_node.body.as_deref(), Some("Line 1\nLine 2"));
+        assert_eq!(message_node.snippet.as_deref(), Some("Line 1\nLine 2"));
     }
 }

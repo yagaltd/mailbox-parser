@@ -68,11 +68,31 @@ pub struct CanonicalMessage {
     pub service_lifecycle_hints: Vec<ParsedServiceLifecycleHint>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub billing_action_hints: Vec<ParsedBillingActionHint>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub sender_domain_hint: Option<CanonicalDomainHint>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub participant_domain_hints: Vec<CanonicalDomainHint>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub forwarded_messages: Vec<ParsedForwardedMessage>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub forwarded_segments: Vec<ParsedForwardedSegment>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CanonicalDomainBucket {
+    Personal,
+    Company,
+    Unknown,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CanonicalDomainHint {
+    pub role: String,
+    pub email: String,
+    pub domain: String,
+    pub bucket: CanonicalDomainBucket,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -165,6 +185,12 @@ fn canonicalize_email_message(
         .iter()
         .map(|r| normalize_message_id(r))
         .collect();
+    let sender_domain_hint = first_domain_hint("from", &email.from);
+    let mut participant_domain_hints = Vec::new();
+    participant_domain_hints.extend(domain_hints("to", &email.to));
+    participant_domain_hints.extend(domain_hints("cc", &email.cc));
+    participant_domain_hints.extend(domain_hints("bcc", &email.bcc));
+    participant_domain_hints.extend(domain_hints("reply_to", &email.reply_to));
 
     CanonicalMessage {
         message_key,
@@ -200,9 +226,70 @@ fn canonicalize_email_message(
         unsubscribe_hints: email.unsubscribe_hints.clone(),
         service_lifecycle_hints: email.service_lifecycle_hints.clone(),
         billing_action_hints: email.billing_action_hints.clone(),
+        sender_domain_hint,
+        participant_domain_hints,
         forwarded_messages: email.forwarded_messages.clone(),
         forwarded_segments: email.forwarded_segments.clone(),
     }
+}
+
+fn first_domain_hint(role: &str, addrs: &[crate::EmailAddress]) -> Option<CanonicalDomainHint> {
+    domain_hints(role, addrs).into_iter().next()
+}
+
+fn domain_hints(role: &str, addrs: &[crate::EmailAddress]) -> Vec<CanonicalDomainHint> {
+    let mut out = Vec::new();
+    for a in addrs {
+        let email = a.address.trim().to_ascii_lowercase();
+        if email.is_empty() {
+            continue;
+        }
+        let Some((_, domain)) = email.split_once('@') else {
+            continue;
+        };
+        let domain = domain.trim().to_ascii_lowercase();
+        if domain.is_empty() {
+            continue;
+        }
+        let bucket = if is_generic_personal_domain(&domain) {
+            CanonicalDomainBucket::Personal
+        } else {
+            CanonicalDomainBucket::Company
+        };
+        out.push(CanonicalDomainHint {
+            role: role.to_string(),
+            email,
+            domain,
+            bucket,
+        });
+    }
+    out
+}
+
+fn is_generic_personal_domain(domain: &str) -> bool {
+    const PROVIDERS: &[&str] = &[
+        "gmail.com",
+        "googlemail.com",
+        "outlook.com",
+        "hotmail.com",
+        "live.com",
+        "msn.com",
+        "yahoo.com",
+        "ymail.com",
+        "rocketmail.com",
+        "icloud.com",
+        "me.com",
+        "mac.com",
+        "proton.me",
+        "protonmail.com",
+        "zoho.com",
+        "aol.com",
+        "gmx.com",
+        "mail.com",
+        "yandex.com",
+        "yandex.ru",
+    ];
+    PROVIDERS.iter().any(|p| *p == domain)
 }
 
 fn split_signature_footer_fallback(reply: &str) -> Option<(String, String)> {

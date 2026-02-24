@@ -61,6 +61,7 @@ For a stable export/ingest format, you can convert `ParsedThread` → `Canonical
 - `CanonicalMessage.forwarded_segments`: structured extraction of forwarded content (headers + nested body parts)
 - `CanonicalMessage.salutation` and `CanonicalMessage.disclaimer_blocks`: preserved when detected
 - `CanonicalMessage.contact_hints` / `signature_entities` / `attachment_hints` / `event_hints` / `mail_kind_hints` / `direction_hint` / `unsubscribe_hints` / `service_lifecycle_hints` / `billing_action_hints`: passthrough parser hints for backend enrichment pipelines
+- `CanonicalMessage.sender_domain_hint` / `participant_domain_hints`: deterministic sender/recipient email domain bucket hints (`personal` vs `company`) for traceability in downstream contact enrichment
 
 ```rust
 use mailbox_parser::{canonicalize_threads, thread_messages};

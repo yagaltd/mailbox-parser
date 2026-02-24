@@ -3734,7 +3734,10 @@ fn extract_mail_kind_hints(
         MailKind::Personal => 4,
         MailKind::Unknown => 5,
     };
-    ordered.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| kind_rank(&a.0).cmp(&kind_rank(&b.0))));
+    ordered.sort_by(|a, b| {
+        b.1.cmp(&a.1)
+            .then_with(|| kind_rank(&a.0).cmp(&kind_rank(&b.0)))
+    });
 
     if ordered.is_empty() {
         return vec![ParsedMailKindHint {
@@ -4408,5 +4411,39 @@ mod tests {
         let input = "body{background:#e5e7eb}h1,h2{font-weight:700;line-height:1.35}@media (max-width:640px){table{width:100%!important}} A customer is waiting for your answer";
         let out = strip_leading_css_preamble(input);
         assert_eq!(out, "A customer is waiting for your answer");
+    }
+
+    #[test]
+    fn canonical_includes_sender_and_participant_domain_hints() {
+        let raw = b"From: Alice <alice@gmail.com>\r\nTo: Bob <bob@company.com>\r\nCc: Carol <carol@yahoo.com>\r\nSubject: Domain hints\r\nDate: Tue, 11 Feb 2025 10:00:00 +0000\r\nMessage-ID: <hints@example.com>\r\n\r\nHello\r\n";
+        let parsed = parse_rfc822(raw).expect("parse");
+        let threads = thread_messages_from_mail_messages(&[MailMessage {
+            uid: None,
+            internal_date: None,
+            flags: Vec::new(),
+            parsed,
+            raw: raw.to_vec(),
+        }]);
+        let canonical = canonicalize_threads(&threads);
+        let msg = &canonical[0].messages[0];
+        let sender = msg
+            .sender_domain_hint
+            .as_ref()
+            .expect("sender domain hint must exist");
+        assert_eq!(sender.domain, "gmail.com");
+        assert_eq!(
+            serde_json::to_value(&sender.bucket).unwrap(),
+            serde_json::json!("personal")
+        );
+        assert!(
+            msg.participant_domain_hints
+                .iter()
+                .any(|h| h.domain == "company.com")
+        );
+        assert!(
+            msg.participant_domain_hints
+                .iter()
+                .any(|h| h.domain == "yahoo.com")
+        );
     }
 }

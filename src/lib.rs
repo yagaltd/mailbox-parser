@@ -26,14 +26,16 @@ pub use mbox::{
 };
 pub use projection::{
     ProjectionDataset, ProjectionFacets, ProjectionLink, ProjectionNode, ProjectionQuery,
-    ProjectionRow, ProjectionStats, apply_query as project_apply_query, build_graph as project_build_graph,
-    dataset as project_dataset, facets as project_facets, rows_from_canonical_threads,
+    ProjectionRow, ProjectionStats, apply_query as project_apply_query,
+    build_graph as project_build_graph, dataset as project_dataset, facets as project_facets,
+    rows_from_canonical_threads,
 };
 
 use anyhow::{Result, anyhow};
 pub use contacts::EmailAddress;
 use mail_parser::{Message, MessageParser, MimeHeaders};
 use serde::{Deserialize, Serialize};
+use std::sync::OnceLock;
 use std::sync::Arc;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1114,7 +1116,14 @@ fn build_canonical_body(text: Option<&str>, html: Option<&str>) -> String {
     let has_html = html.map(|s| !s.trim().is_empty()).unwrap_or(false);
     let mut out = String::new();
     if let Some(t) = text.map(|s| s.trim()).filter(|s| !s.is_empty()) {
-        out = t.to_string();
+        let mut cleaned = strip_leading_css_preamble(t);
+        if looks_like_inline_html(&cleaned) {
+            cleaned = html_to_text(&cleaned);
+        }
+        cleaned = cleanup_html_boilerplate(&cleaned);
+        if !cleaned.trim().is_empty() {
+            out = cleaned;
+        }
     } else if let Some(h) = html.map(|s| s.trim()).filter(|s| !s.is_empty()) {
         let t = cleanup_html_boilerplate(&html_to_text(h));
         if !t.trim().is_empty() {
@@ -1124,6 +1133,7 @@ fn build_canonical_body(text: Option<&str>, html: Option<&str>) -> String {
     if out.trim().is_empty() {
         return String::new();
     }
+    out = strip_leading_css_preamble(&out);
     if has_html {
         out = cleanup_html_boilerplate(&out);
     }
@@ -3217,7 +3227,9 @@ fn extract_event_hints(
         if l.is_empty() {
             return false;
         }
-        is_time_like(l) || l.split_whitespace().any(is_numeric_date_token) || has_month_range(l)
+        is_time_like(l)
+            || l.split_whitespace().any(is_numeric_date_token)
+            || has_month_range(l)
             || has_weekday_and_date(l)
     });
     let allow_shipping = if is_news_like {
@@ -3924,6 +3936,82 @@ fn html_to_text(input: &str) -> String {
     decode_html_entities(out.trim())
 }
 
+fn looks_like_inline_html(s: &str) -> bool {
+    let lower = s.to_ascii_lowercase();
+    lower.contains("<html")
+        || lower.contains("<body")
+        || lower.contains("<table")
+        || lower.contains("<div")
+        || (lower.contains('<') && lower.contains('>') && lower.contains("</"))
+}
+
+fn css_selector_regex() -> &'static regex::Regex {
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        regex::Regex::new(r"^[a-z][a-z0-9_-]*(?:\s*,\s*[a-z][a-z0-9_-]*)*$")
+            .expect("valid css selector regex")
+    })
+}
+
+fn is_css_selector(selector: &str) -> bool {
+    let sel = selector.trim().trim_matches(|c: char| c == ';' || c == ',');
+    if sel.is_empty() || sel.len() > 160 {
+        return false;
+    }
+    if !sel.chars().all(|c| {
+        c.is_ascii_alphanumeric()
+            || c.is_ascii_whitespace()
+            || matches!(
+                c,
+                '.' | ',' | '#' | '@' | ':' | '_' | '-' | '*' | '+' | '>' | '~' | '[' | ']'
+                    | '(' | ')' | '=' | '"' | '\'' | '/' | ';' | '%'
+            )
+    }) {
+        return false;
+    }
+    let lower = sel.to_ascii_lowercase();
+    if lower.contains("http://") || lower.contains("https://") {
+        return false;
+    }
+    if lower.contains(',')
+        || lower.contains('.')
+        || lower.contains('#')
+        || lower.contains('[')
+        || lower.contains(']')
+        || lower.contains('*')
+        || lower.starts_with('@')
+        || lower.contains(' ')
+    {
+        return true;
+    }
+    css_selector_regex().is_match(&lower)
+}
+
+fn strip_leading_css_preamble(input: &str) -> String {
+    let mut s = input.trim_start();
+    for _ in 0..400 {
+        let Some(open_idx) = s.find('{') else {
+            break;
+        };
+        if open_idx > 220 {
+            break;
+        }
+        let Some(close_rel) = s[open_idx + 1..].find('}') else {
+            break;
+        };
+        let close_idx = open_idx + 1 + close_rel;
+        let selector = s[..open_idx].trim();
+        let decl = s[open_idx + 1..close_idx].trim();
+        let decl_is_css = decl.contains(':') && !decl.contains('<');
+        if !is_css_selector(selector) || !decl_is_css {
+            break;
+        }
+        s = s[close_idx + 1..].trim_start();
+        s = s.trim_start_matches(|c: char| c == '}' || c == ';' || c.is_whitespace());
+    }
+    s.trim().to_string()
+}
+
 fn decode_html_entities(s: &str) -> String {
     let mut out = String::new();
     let mut chars = s.chars().peekable();
@@ -3966,4 +4054,33 @@ fn decode_html_entities(s: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strip_leading_css_preamble_removes_css_noise() {
+        let input = "body,td { color:#2f2f2f; font:11px/1.35em Verdana; } Dear EDGE TECHNOLOGIES";
+        let out = strip_leading_css_preamble(input);
+        assert_eq!(out, "Dear EDGE TECHNOLOGIES");
+    }
+
+    #[test]
+    fn build_canonical_body_cleans_inline_html_css_prefix() {
+        let input = "body,td { color:#2f2f2f; font:11px/1.35em Verdana; } Dear EDGE TECHNOLOGIES <table><tr><td>Name</td><td>Sku</td></tr></table> Best Regards";
+        let out = build_canonical_body(Some(input), None);
+        assert!(out.contains("Dear EDGE TECHNOLOGIES"));
+        assert!(out.contains("Best Regards"));
+        assert!(!out.to_ascii_lowercase().contains("body,td {"));
+        assert!(!out.contains("<table"));
+    }
+
+    #[test]
+    fn strip_leading_css_preamble_handles_chained_blocks() {
+        let input = "body{background:#e5e7eb}h1,h2{font-weight:700;line-height:1.35}@media (max-width:640px){table{width:100%!important}} A customer is waiting for your answer";
+        let out = strip_leading_css_preamble(input);
+        assert_eq!(out, "A customer is waiting for your answer");
+    }
 }

@@ -2036,7 +2036,13 @@ fn parse_salutation_name(line: &str) -> Option<String> {
         let punct = [',', ':', ';', '-', '.', '!']
             .iter()
             .any(|ch| lower.starts_with(&format!("{prefix}{ch}")));
-        if !(exact || spaced || punct) {
+        let glued = lower.starts_with(prefix)
+            && trimmed
+                .chars()
+                .nth(prefix.len())
+                .map(|ch| ch.is_ascii_uppercase())
+                .unwrap_or(false);
+        if !(exact || spaced || punct || glued) {
             continue;
         }
         if exact {

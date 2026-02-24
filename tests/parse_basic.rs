@@ -736,6 +736,25 @@ fn parse_contact_hints_salutation_truncates_inline_sentence_tail() {
 }
 
 #[test]
+fn parse_contact_hints_salutation_detects_missing_space_after_prefix() {
+    let msg = concat!(
+        "From: Support <support@example.com>\n",
+        "To: Thomas <thomas@example.com>\n",
+        "Subject: Greeting\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "DearThomas,\n",
+        "\n",
+        "Please find the update below.\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    assert!(parsed.contact_hints.iter().any(|h| {
+        h.source == mailbox_parser::ContactHintSource::Salutation
+            && h.name.as_deref() == Some("Thomas")
+    }));
+}
+
+#[test]
 fn parse_contact_hints_salutation_truncates_multilingual_tail_marker() {
     let msg = concat!(
         "From: Support <support@example.com>\n",
@@ -1146,6 +1165,15 @@ fn signature_extracts_terminal_kind_regards_with_name_and_title_tail() {
         reply,
         "Thanks for your support.\n\nThe command is now applied."
     );
+}
+
+#[test]
+fn signature_extracts_embedded_your_best_signoff_from_tail_line() {
+    let text = "Thank you, Thomas! Your best,\nThomas";
+    let blocks = segment_email_body(text);
+    assert!(blocks.iter().any(|b| b.kind == EmailBlockKind::Signature));
+    let reply = reply_text(text, &blocks);
+    assert_eq!(reply, "Thank you, Thomas!");
 }
 
 #[test]
@@ -1625,7 +1653,10 @@ event_deadline_patterns:
     )
     .expect("parse");
     assert_eq!(parsed.event_hints.len(), 1);
-    assert_eq!(parsed.event_hints[0].kind, mailbox_parser::EventHintKind::Deadline);
+    assert_eq!(
+        parsed.event_hints[0].kind,
+        mailbox_parser::EventHintKind::Deadline
+    );
 }
 
 #[test]
@@ -1671,7 +1702,10 @@ billing_action_rules:
     )
     .expect("parse");
     assert_eq!(parsed.event_hints.len(), 1);
-    assert_eq!(parsed.event_hints[0].kind, mailbox_parser::EventHintKind::Deadline);
+    assert_eq!(
+        parsed.event_hints[0].kind,
+        mailbox_parser::EventHintKind::Deadline
+    );
 }
 
 #[test]

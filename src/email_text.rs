@@ -412,6 +412,7 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
         "regards",
         "regards,",
         "rgds",
+        "your best",
         "cdlt",
         "thanks",
         "thank you",
@@ -600,11 +601,26 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
         }
     }
 
+    let is_salutation_line = |line: &str| {
+        let core = line_core(line);
+        let raw = line.trim();
+        SALUTATION_PREFIXES.iter().any(|p| {
+            core == *p
+                || core.starts_with(&format!("{p} "))
+                || core.starts_with(&format!("{p},"))
+                || core.starts_with(&format!("{p}:"))
+                || (core.starts_with(p)
+                    && raw
+                        .chars()
+                        .nth(p.len())
+                        .map(|ch| ch.is_ascii_uppercase())
+                        .unwrap_or(false))
+        })
+    };
+
     for (_idx, s, e) in non_empty_before_quote.iter().copied().take(6) {
-        let core = line_core(get_line((s, e)));
-        if SALUTATION_PREFIXES.iter().any(|p| {
-            core == *p || core.starts_with(&format!("{p} ")) || core.starts_with(&format!("{p},"))
-        }) {
+        let line = get_line((s, e));
+        if is_salutation_line(line) {
             salutation_line = Some((s, e));
             break;
         }
@@ -633,11 +649,26 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
                     || core == format!("{c}.")
                     || core == format!("{c}!");
             }
+            if *c == "your best" {
+                return core == *c
+                    || core.starts_with("your best,")
+                    || core.starts_with("your best.");
+            }
             core == *c
                 || core.starts_with(&format!("{c},"))
                 || core.starts_with(&format!("{c}."))
                 || core.starts_with(c)
         })
+    };
+    let inline_signature_start_offset = |line: &str| -> Option<usize> {
+        let lower = line.to_ascii_lowercase();
+        for marker in [" your best,", " your best.", " your best!", " your best"] {
+            if let Some(pos) = lower.find(marker) {
+                let start = pos + 1; // skip leading space in the marker
+                return Some(start);
+            }
+        }
+        None
     };
     let is_ambiguous_short_signoff = |core: &str| {
         let core = core
@@ -699,6 +730,7 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
         let (_idx, s, e) = non_empty_before_quote[pos];
         let t = get_line((s, e)).trim();
         let core = line_core(t);
+        let has_inline_signoff = inline_signature_start_offset(t).is_some();
         if DISCLAIMER_CUES
             .iter()
             .any(|c| core.starts_with(c) || core.contains(c))
@@ -717,7 +749,7 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
             score += 3;
             strong_evidence = true;
         }
-        if is_signature_cue_line(&core) {
+        if is_signature_cue_line(&core) || has_inline_signoff {
             score += 3;
             strong_evidence = true;
         }
@@ -762,7 +794,7 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
         let tail_lines = non_empty_before_quote.len().saturating_sub(pos);
         let signoff_tail_small = tail_lines <= 4;
         let ambiguous_short = is_ambiguous_short_signoff(&core);
-        let explicit_signoff_candidate = is_signature_cue_line(&core)
+        let explicit_signoff_candidate = (is_signature_cue_line(&core) || has_inline_signoff)
             && (next_has_name
                 || has_contact_marker
                 || (!ambiguous_short
@@ -945,7 +977,10 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
             }
             break;
         }
-        signature_start = Some(non_empty_before_quote[pos].1);
+        let (line_start, line_end) = (non_empty_before_quote[pos].1, non_empty_before_quote[pos].2);
+        let line = get_line((line_start, line_end));
+        let inline_start = inline_signature_start_offset(line).map(|off| line_start + off);
+        signature_start = Some(inline_start.unwrap_or(line_start));
     }
 
     if let (Some(sig), Some(dis)) = (signature_start, disclaimer_start)

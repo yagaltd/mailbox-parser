@@ -140,6 +140,7 @@ Notable heuristics:
 - `service_lifecycle_hints` classifies subscription/membership lifecycle events (`subscription_canceled`, `subscription_renewed`, `order_confirmation`, `ticket_confirmation`, etc.) and extracts key entities like customer/plan/amount when available.
 - `billing_action_hints` captures actionable billing links (`view_invoice`, `pay_now`, `manage_subscription`, etc.) even for newsletter/promo messages where lifecycle classification is intentionally gated.
 - Lifecycle and billing action detection are data-driven via `config/lifecycle_lexicon.yaml` (embedded defaults) and include multilingual token sets for `en`, `fr`, `es`, `de`, `it`, `nl`, and `pl`.
+- `projection` helpers expose shared row/filter/graph dataset builders so CLI HTML and backend projection APIs can stay semantically aligned.
 
 ### Lifecycle lexicon override
 

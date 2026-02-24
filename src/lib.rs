@@ -3,6 +3,7 @@ mod email_text;
 mod imap;
 mod lifecycle_lexicon;
 mod mbox;
+mod projection;
 
 pub use canonical::{CanonicalAttachment, CanonicalMessage, CanonicalThread, canonicalize_threads};
 pub use email_text::{
@@ -22,6 +23,11 @@ pub use mbox::{
     MboxMessage, MboxParseError, MboxParseOptions, MboxParseReport, MboxReadOptions,
     iter_mbox_messages, parse_mbox_file, scan_mbox_file_headers_only, scan_mbox_headers,
     scan_mbox_headers_with_progress,
+};
+pub use projection::{
+    ProjectionDataset, ProjectionFacets, ProjectionLink, ProjectionNode, ProjectionQuery,
+    ProjectionRow, ProjectionStats, apply_query as project_apply_query, build_graph as project_build_graph,
+    dataset as project_dataset, facets as project_facets, rows_from_canonical_threads,
 };
 
 use anyhow::{Result, anyhow};

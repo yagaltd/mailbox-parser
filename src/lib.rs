@@ -35,8 +35,8 @@ use anyhow::{Result, anyhow};
 pub use contacts::EmailAddress;
 use mail_parser::{Message, MessageParser, MimeHeaders};
 use serde::{Deserialize, Serialize};
-use std::sync::OnceLock;
 use std::sync::Arc;
+use std::sync::OnceLock;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ParsedEmail {
@@ -3335,35 +3335,65 @@ fn extract_mail_kind_hints(
     service_lifecycle_hints: &[ParsedServiceLifecycleHint],
 ) -> Vec<ParsedMailKindHint> {
     use std::collections::HashMap;
-    let mut scores: HashMap<MailKind, i32> = HashMap::new();
-    let mut signals: HashMap<MailKind, Vec<String>> = HashMap::new();
-    let mut add = |kind: MailKind, weight: i32, signal: &str| {
+    fn add_score(
+        scores: &mut HashMap<MailKind, i32>,
+        signals: &mut HashMap<MailKind, Vec<String>>,
+        kind: MailKind,
+        weight: i32,
+        signal: &str,
+    ) {
         *scores.entry(kind.clone()).or_insert(0) += weight;
         signals.entry(kind).or_default().push(signal.to_string());
-    };
+    }
+    let mut scores: HashMap<MailKind, i32> = HashMap::new();
+    let mut signals: HashMap<MailKind, Vec<String>> = HashMap::new();
 
-    let header = |k: &str| raw_headers.get(k).map(|s| s.to_ascii_lowercase());
+    let header = |k: &str| raw_headers.get(k).map(|s| s.to_lowercase());
     if raw_headers.contains_key("list-unsubscribe") {
-        add(MailKind::Newsletter, 3, "header:list_unsubscribe");
+        add_score(
+            &mut scores,
+            &mut signals,
+            MailKind::Newsletter,
+            3,
+            "header:list_unsubscribe",
+        );
     }
     if raw_headers.contains_key("list-id") {
-        add(MailKind::Newsletter, 3, "header:list_id");
+        add_score(
+            &mut scores,
+            &mut signals,
+            MailKind::Newsletter,
+            3,
+            "header:list_id",
+        );
     }
     if let Some(p) = header("precedence") {
         if p.contains("bulk") || p.contains("list") {
-            add(MailKind::Newsletter, 2, "header:precedence_bulk");
+            add_score(
+                &mut scores,
+                &mut signals,
+                MailKind::Newsletter,
+                2,
+                "header:precedence_bulk",
+            );
         }
     }
     if let Some(a) = header("auto-submitted") {
         if a.contains("auto-generated") {
-            add(MailKind::Notification, 2, "header:auto_submitted");
+            add_score(
+                &mut scores,
+                &mut signals,
+                MailKind::Notification,
+                2,
+                "header:auto_submitted",
+            );
         }
     }
 
     let text = format!(
         "{}\n{}",
-        subject.unwrap_or_default().to_ascii_lowercase(),
-        body_canonical.to_ascii_lowercase()
+        subject.unwrap_or_default().to_lowercase(),
+        body_canonical.to_lowercase()
     );
 
     for token in [
@@ -3377,7 +3407,49 @@ fn extract_mail_kind_hints(
         "promotion",
     ] {
         if text.contains(token) {
-            add(MailKind::Promotion, 2, &format!("token:{token}"));
+            add_score(
+                &mut scores,
+                &mut signals,
+                MailKind::Promotion,
+                2,
+                &format!("token:{token}"),
+            );
+        }
+    }
+    for token in [
+        "réduction",
+        "reduction",
+        "remise",
+        "offre limitée",
+        "offre limitee",
+        "descuento",
+        "oferta",
+        "cupón",
+        "cupon",
+        "promoción",
+        "promocion",
+        "rabatt",
+        "gutschein",
+        "sonderangebot",
+        "sconto",
+        "offerta",
+        "promozione",
+        "korting",
+        "aanbieding",
+        "promotie",
+        "zniżka",
+        "znizka",
+        "rabat",
+        "oferta promocyjna",
+    ] {
+        if text.contains(token) {
+            add_score(
+                &mut scores,
+                &mut signals,
+                MailKind::Promotion,
+                2,
+                &format!("token:{token}"),
+            );
         }
     }
     for token in [
@@ -3385,43 +3457,265 @@ fn extract_mail_kind_hints(
         "manage preferences",
         "view in browser",
         "newsletter",
+        "read more",
+        "daily digest",
+        "weekly digest",
+        "creator digest",
+        "manage subscriptions",
+        "subscription preferences",
+        "se désabonner",
+        "se désinscrire",
+        "gerer vos preferences",
+        "gérer vos préférences",
+        "gérer les préférences",
+        "voir dans le navigateur",
+        "lettre d'information",
+        "bulletin",
+        "lire la suite",
+        "darse de baja",
+        "cancelar suscripción",
+        "cancelar suscripcion",
+        "gestionar preferencias",
+        "ver en el navegador",
+        "boletín",
+        "boletin",
+        "leer más",
+        "leer mas",
+        "abbestellen",
+        "abmelden",
+        "newsletter abbestellen",
+        "einstellungen verwalten",
+        "präferenzen verwalten",
+        "praeferenzen verwalten",
+        "im browser anzeigen",
+        "disiscriviti",
+        "annulla iscrizione",
+        "gestisci preferenze",
+        "visualizza nel browser",
+        "uitschrijven",
+        "afmelden",
+        "voorkeuren beheren",
+        "bekijk in browser",
+        "nieuwsbrief",
+        "wypisz się",
+        "wypisz sie",
+        "zrezygnuj z subskrypcji",
+        "zarządzaj preferencjami",
+        "zarzadzaj preferencjami",
+        "biuletyn",
     ] {
         if text.contains(token) {
-            add(MailKind::Newsletter, 2, &format!("token:{token}"));
+            add_score(
+                &mut scores,
+                &mut signals,
+                MailKind::Newsletter,
+                2,
+                &format!("token:{token}"),
+            );
         }
     }
     for token in [
         "receipt", "invoice", "order", "shipment", "tracking", "waybill", "courier",
     ] {
         if text.contains(token) {
-            add(MailKind::Transactional, 2, &format!("token:{token}"));
+            add_score(
+                &mut scores,
+                &mut signals,
+                MailKind::Transactional,
+                2,
+                &format!("token:{token}"),
+            );
         }
     }
-    for token in ["alert", "notification", "reminder", "digest", "update"] {
+    for token in [
+        "expédition",
+        "expedition",
+        "livraison",
+        "suivi de livraison",
+        "numéro de suivi",
+        "numero de suivi",
+        "colis",
+        "commande",
+        "facture",
+        "envío",
+        "envio",
+        "seguimiento",
+        "número de seguimiento",
+        "numero de seguimiento",
+        "paquete",
+        "pedido",
+        "versand",
+        "lieferung",
+        "sendungsverfolgung",
+        "tracking-nummer",
+        "bestellung",
+        "rechnung",
+        "paket",
+        "spedizione",
+        "consegna",
+        "tracciamento",
+        "numero di tracking",
+        "ordine",
+        "fattura",
+        "verzending",
+        "levering",
+        "bestelling",
+        "factuur",
+        "track en trace",
+        "wysyłka",
+        "wysylka",
+        "dostawa",
+        "śledzenie",
+        "sledzenie",
+        "zamówienie",
+        "zamowienie",
+        "przesyłka",
+        "przesylka",
+        "faktura",
+    ] {
         if text.contains(token) {
-            add(MailKind::Notification, 1, &format!("token:{token}"));
+            add_score(
+                &mut scores,
+                &mut signals,
+                MailKind::Transactional,
+                2,
+                &format!("token:{token}"),
+            );
         }
     }
-    for token in ["thanks", "thank you", "please", "can you", "could you"] {
+    for token in [
+        "alert",
+        "notification",
+        "reminder",
+        "digest",
+        "update",
+        "benachrichtigung",
+        "erinnerung",
+        "aktualisierung",
+        "notificación",
+        "notificacion",
+        "recordatorio",
+        "actualización",
+        "actualizacion",
+        "notification",
+        "rappel",
+        "mise à jour",
+        "mise a jour",
+        "notifica",
+        "avviso",
+        "promemoria",
+        "aggiornamento",
+        "melding",
+        "herinnering",
+        "powiadomienie",
+        "przypomnienie",
+        "aktualizacja",
+        "verification code",
+        "one-time password",
+        "one time password",
+        "otp",
+    ] {
         if text.contains(token) {
-            add(MailKind::Personal, 1, &format!("token:{token}"));
+            add_score(
+                &mut scores,
+                &mut signals,
+                MailKind::Notification,
+                1,
+                &format!("token:{token}"),
+            );
+        }
+    }
+    for token in [
+        "thanks for your reply",
+        "thank you for your reply",
+        "thanks for the update",
+        "as discussed",
+        "let me know",
+        "please find attached",
+        "can we schedule",
+        "could you please",
+        "i would like to",
+        "i wanted to follow up",
+    ] {
+        if text.contains(token) {
+            add_score(
+                &mut scores,
+                &mut signals,
+                MailKind::Personal,
+                1,
+                &format!("token:{token}"),
+            );
         }
     }
 
-    if let Some(from) = raw_headers.get("from").map(|s| s.to_ascii_lowercase()) {
-        if from.contains("no-reply")
+    if let Some(from) = raw_headers.get("from").map(|s| s.to_lowercase()) {
+        let newsletter_sender_domains = [
+            "redditmail.com",
+            "substack.com",
+            "beehiiv.com",
+            "mail.beehiiv.com",
+            "mailchi.mp",
+            "list-manage.com",
+            "mailchimpapp.net",
+            "sendgrid.net",
+            "amazonses.com",
+            "mailgun.org",
+            "convertkit-mail.com",
+            "mailer.kit.com",
+            "buttondown.email",
+        ];
+        let is_newsletter_sender = newsletter_sender_domains.iter().any(|d| from.contains(d));
+        if is_newsletter_sender {
+            add_score(
+                &mut scores,
+                &mut signals,
+                MailKind::Newsletter,
+                2,
+                "header:from_newsletter_sender_domain",
+            );
+        }
+        let is_automation_sender = from.contains("no-reply")
             || from.contains("noreply")
             || from.contains("newsletter")
-            || from.contains("updates@")
-        {
-            add(MailKind::Notification, 1, "header:from_automation");
+            || from.contains("updates@");
+        if is_automation_sender {
+            if is_newsletter_sender {
+                add_score(
+                    &mut scores,
+                    &mut signals,
+                    MailKind::Newsletter,
+                    1,
+                    "header:from_automation_newsletter",
+                );
+            } else {
+                add_score(
+                    &mut scores,
+                    &mut signals,
+                    MailKind::Notification,
+                    1,
+                    "header:from_automation",
+                );
+            }
         }
+    }
+    let newsletter_score = scores.get(&MailKind::Newsletter).copied().unwrap_or(0);
+    let promotion_score = scores.get(&MailKind::Promotion).copied().unwrap_or(0);
+    if newsletter_score >= 3 && promotion_score >= 3 {
+        add_score(
+            &mut scores,
+            &mut signals,
+            MailKind::Newsletter,
+            1,
+            "rule:newsletter_over_promotion",
+        );
     }
     if service_lifecycle_hints
         .iter()
         .any(|h| h.confidence == HintConfidence::High && h.kind != ServiceLifecycleKind::Unknown)
     {
-        add(
+        add_score(
+            &mut scores,
+            &mut signals,
             MailKind::Transactional,
             3,
             "service_lifecycle:high_confidence",
@@ -3432,7 +3726,15 @@ fn extract_mail_kind_hints(
         .into_iter()
         .map(|(k, s)| (k.clone(), s, signals.remove(&k).unwrap_or_default()))
         .collect();
-    ordered.sort_by(|a, b| b.1.cmp(&a.1));
+    let kind_rank = |k: &MailKind| match k {
+        MailKind::Transactional => 0,
+        MailKind::Newsletter => 1,
+        MailKind::Notification => 2,
+        MailKind::Promotion => 3,
+        MailKind::Personal => 4,
+        MailKind::Unknown => 5,
+    };
+    ordered.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| kind_rank(&a.0).cmp(&kind_rank(&b.0))));
 
     if ordered.is_empty() {
         return vec![ParsedMailKindHint {
@@ -3969,8 +4271,26 @@ fn is_css_selector(selector: &str) -> bool {
             || c.is_ascii_whitespace()
             || matches!(
                 c,
-                '.' | ',' | '#' | '@' | ':' | '_' | '-' | '*' | '+' | '>' | '~' | '[' | ']'
-                    | '(' | ')' | '=' | '"' | '\'' | '/' | ';' | '%'
+                '.' | ','
+                    | '#'
+                    | '@'
+                    | ':'
+                    | '_'
+                    | '-'
+                    | '*'
+                    | '+'
+                    | '>'
+                    | '~'
+                    | '['
+                    | ']'
+                    | '('
+                    | ')'
+                    | '='
+                    | '"'
+                    | '\''
+                    | '/'
+                    | ';'
+                    | '%'
             )
     }) {
         return false;

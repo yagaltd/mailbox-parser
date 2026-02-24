@@ -1288,6 +1288,85 @@ fn parse_mail_kind_hints_detects_promotion_tokens() {
 }
 
 #[test]
+fn parse_mail_kind_hints_prefers_newsletter_on_sender_domain_and_footer_tokens() {
+    let msg = concat!(
+        "From: Reddit <noreply@redditmail.com>\n",
+        "To: User <user@example.com>\n",
+        "Subject: Community update\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Read more in your daily digest.\n",
+        "Manage subscriptions in settings.\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    let primary = parsed
+        .mail_kind_hints
+        .iter()
+        .find(|h| h.is_primary)
+        .expect("primary hint");
+    assert_eq!(primary.kind, MailKind::Newsletter);
+}
+
+#[test]
+fn parse_mail_kind_hints_detects_multilingual_newsletter_tokens() {
+    let msg = concat!(
+        "From: Lettre <contact@example.fr>\n",
+        "To: User <user@example.com>\n",
+        "Subject: Bulletin hebdomadaire\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Pour vous désabonner, gérez vos préférences et voir dans le navigateur.\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    let primary = parsed
+        .mail_kind_hints
+        .iter()
+        .find(|h| h.is_primary)
+        .expect("primary hint");
+    assert_eq!(primary.kind, MailKind::Newsletter);
+}
+
+#[test]
+fn parse_mail_kind_hints_prefers_newsletter_over_promotion_tie() {
+    let msg = concat!(
+        "From: Digest <updates@mail.beehiiv.com>\n",
+        "To: User <user@example.com>\n",
+        "Subject: Weekly newsletter with discount code\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Read more in this newsletter.\n",
+        "Limited time discount and promotion inside.\n",
+        "Manage preferences.\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    let primary = parsed
+        .mail_kind_hints
+        .iter()
+        .find(|h| h.is_primary)
+        .expect("primary hint");
+    assert_eq!(primary.kind, MailKind::Newsletter);
+}
+
+#[test]
+fn parse_mail_kind_hints_detects_multilingual_shipping_transactional() {
+    let msg = concat!(
+        "From: Livraison <support@example.fr>\n",
+        "To: User <user@example.com>\n",
+        "Subject: Votre livraison est en route\n",
+        "Content-Type: text/plain; charset=utf-8\n",
+        "\n",
+        "Suivi de livraison: numéro de suivi 123456.\n",
+    );
+    let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
+    let primary = parsed
+        .mail_kind_hints
+        .iter()
+        .find(|h| h.is_primary)
+        .expect("primary hint");
+    assert_eq!(primary.kind, MailKind::Transactional);
+}
+
+#[test]
 fn parse_direction_hint_detects_outbound_with_owner_email() {
     let msg = concat!(
         "From: Aurel <fitchefaurel@gmail.com>\n",

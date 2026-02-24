@@ -134,6 +134,10 @@ Notable heuristics:
 ### Mail kind + direction hints
 
 - `mail_kind_hints` is deterministic and confidence-based (`personal`, `newsletter`, `promotion`, `transactional`, `notification`, `unknown`), using header + body signals.
+- Mail-kind token matching is multilingual (`en`, `fr`, `es`, `de`, `it`, `nl`, `pl`) for newsletter/promotion/notification/transactional detection (including localized footer phrases like unsubscribe/manage-preferences/view-in-browser and shipping/tracking vocabulary).
+- Sender-domain hints add newsletter weight for common bulk newsletter providers/domains (`redditmail`, `substack`, `beehiiv`, `mailchimp`, `sendgrid`, `amazonses`, `mailgun`, `buttondown`, etc.).
+- Tie-breaking favors `newsletter` over `promotion` when both are strongly signaled, reducing promo-token leakage in editorial digest emails.
+- Personal classification is intentionally conservative and relies on conversation-oriented phrasing (not generic polite words alone).
 - `direction_hint` is emitted only when owner identity is known (for example via CLI `--owner-email`). It classifies messages as `inbound`, `outbound`, `self_message`, or `unknown`.
 - HTML-heavy newsletter/promotional emails apply footer cleanup before segmentation to reduce unsubscribe/footer leakage in `body_canonical` and downstream `reply_text`.
 - `unsubscribe_hints` includes `List-Unsubscribe`/`List-Unsubscribe-Post` and body unsubscribe/manage-preferences links.

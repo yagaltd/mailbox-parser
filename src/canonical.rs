@@ -154,13 +154,43 @@ fn canonicalize_email_message(
             EmailBlockKind::Forwarded => forwarded_blocks.push(t.to_string()),
             EmailBlockKind::Signature => {
                 if signature.is_none() {
-                    signature = Some(t.to_string());
+                    let mut sig = t.to_string();
+                    // Cap signature at 300 chars to avoid capturing promotional/footer content
+                    const MAX_SIG_LEN: usize = 300;
+                    if sig.len() > MAX_SIG_LEN {
+                        // Find last newline before limit to avoid cutting words
+                        // Use char boundaries to handle Unicode correctly
+                        let truncated: String = sig.chars().take(MAX_SIG_LEN).collect();
+                        if let Some(last_newline) = truncated.rfind('\n') {
+                            sig.truncate(last_newline);
+                        } else {
+                            sig = truncated;
+                        }
+                    }
+                    signature = Some(sig);
                 }
             }
             EmailBlockKind::Disclaimer => disclaimer_blocks.push(t.to_string()),
             EmailBlockKind::Salutation => {
                 if salutation.is_none() {
-                    salutation = Some(t.to_string());
+                    let mut s = t.to_string();
+                    // Truncate salutation to max 50 chars to avoid capturing entire first sentence
+                    if s.len() > 50 {
+                        let cutoff = s
+                            .chars()
+                            .take(50)
+                            .enumerate()
+                            .find_map(|(i, c)| {
+                                if matches!(c, ',' | '.' | '!' | '?' | ';' | ':') && i > 3 {
+                                    Some(i + 1)
+                                } else {
+                                    None
+                                }
+                            })
+                            .unwrap_or(50);
+                        s = s.chars().take(cutoff).collect();
+                    }
+                    salutation = Some(s);
                 }
             }
             EmailBlockKind::Reply => {}
@@ -169,7 +199,19 @@ fn canonicalize_email_message(
     if signature.is_none() {
         if let Some((trimmed_reply, footer_signature)) = split_signature_footer_fallback(&reply) {
             reply = trimmed_reply;
-            signature = Some(footer_signature);
+            // Cap fallback signature at 300 chars
+            let mut sig = footer_signature;
+            const MAX_SIG_LEN: usize = 300;
+            if sig.len() > MAX_SIG_LEN {
+                // Use char boundaries to handle Unicode correctly
+                let truncated: String = sig.chars().take(MAX_SIG_LEN).collect();
+                if let Some(last_newline) = truncated.rfind('\n') {
+                    sig.truncate(last_newline);
+                } else {
+                    sig = truncated;
+                }
+            }
+            signature = Some(sig);
         }
     }
 

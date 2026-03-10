@@ -1557,8 +1557,28 @@ fn parse_forwarded_segment(
         body,
         &nested_blocks,
     ));
-    segment.salutation =
+    // Extract salutation and truncate to max 50 chars to avoid capturing entire first sentence
+    let mut salutation =
         first_block_of_kind(body, &nested_blocks, crate::EmailBlockKind::Salutation);
+    if let Some(ref mut s) = salutation {
+        if s.len() > 50 {
+            // Find first punctuation to cut at natural boundary
+            let cutoff = s
+                .chars()
+                .take(50)
+                .enumerate()
+                .find_map(|(i, c)| {
+                    if matches!(c, ',' | '.' | '!' | '?' | ';' | ':') && i > 3 {
+                        Some(i + 1)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or(50);
+            *s = s.chars().take(cutoff).collect();
+        }
+    }
+    segment.salutation = salutation;
     segment.signature = first_block_of_kind(body, &nested_blocks, crate::EmailBlockKind::Signature);
 
     for b in &nested_blocks {

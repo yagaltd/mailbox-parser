@@ -1,0 +1,20 @@
+# Build outputs
+/target
+Cargo.lock
+
+# IDE
+/.idea
+/.vscode
+/.claude
+cli/.claude/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test/output
+.test/
+tmp/
+mailbox-GLiNER.md

@@ -88,8 +88,16 @@ pub fn rows_from_canonical_threads(threads: &[CanonicalThread]) -> Vec<Projectio
                 to: msg.to.iter().map(format_email_address).collect(),
                 cc: msg.cc.iter().map(format_email_address).collect(),
                 reply_text: msg.reply_text.clone(),
-                mail_kinds: msg.mail_kind_hints.iter().map(|h| format!("{:?}", h.kind).to_lowercase()).collect(),
-                event_kinds: msg.event_hints.iter().map(|h| format!("{:?}", h.kind).to_lowercase()).collect(),
+                mail_kinds: msg
+                    .mail_kind_hints
+                    .iter()
+                    .map(|h| format!("{:?}", h.kind).to_lowercase())
+                    .collect(),
+                event_kinds: msg
+                    .event_hints
+                    .iter()
+                    .map(|h| format!("{:?}", h.kind).to_lowercase())
+                    .collect(),
                 lifecycle_kinds: msg
                     .service_lifecycle_hints
                     .iter()
@@ -115,9 +123,7 @@ pub fn apply_query(mut rows: Vec<ProjectionRow>, query: &ProjectionQuery) -> Vec
         {
             return false;
         }
-        if !query.date_to.is_empty()
-            && !date_part.is_empty()
-            && date_part > query.date_to.as_str()
+        if !query.date_to.is_empty() && !date_part.is_empty() && date_part > query.date_to.as_str()
         {
             return false;
         }
@@ -128,7 +134,10 @@ pub fn apply_query(mut rows: Vec<ProjectionRow>, query: &ProjectionQuery) -> Vec
             return false;
         }
         if !query.lifecycle_kind.is_empty()
-            && !row.lifecycle_kinds.iter().any(|v| v == &query.lifecycle_kind)
+            && !row
+                .lifecycle_kinds
+                .iter()
+                .any(|v| v == &query.lifecycle_kind)
         {
             return false;
         }
@@ -147,7 +156,11 @@ pub fn apply_query(mut rows: Vec<ProjectionRow>, query: &ProjectionQuery) -> Vec
     rows
 }
 
-pub fn build_graph(rows: &[ProjectionRow], group: &str, layer: &str) -> (Vec<ProjectionNode>, Vec<ProjectionLink>) {
+pub fn build_graph(
+    rows: &[ProjectionRow],
+    group: &str,
+    layer: &str,
+) -> (Vec<ProjectionNode>, Vec<ProjectionLink>) {
     let mut nodes = Vec::new();
     let mut links = Vec::new();
     let mut by_node: HashSet<String> = HashSet::new();

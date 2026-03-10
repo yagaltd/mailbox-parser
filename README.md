@@ -313,14 +313,8 @@ println!(
 
 ## Related
 
-- `mailbox-parser-cli` (in this repo): convenience CLI for IMAP sync + export.
-- `parsers/mailbox-parser/imap.example.toml`: config template for the CLI.
-- `docs/mailbox-parser-json-contract.md`: JSON profile field contract + ingestion guidance.
-
-## V3 boundary note
-
-In the V2→V3 redesign, this crate remains a parser/extraction library.
-
-- It parses/syncs email sources and exports stable parser-level structures.
-- V3-specific domain modeling and ingest orchestration live in V3 crates (`v3/crates/sdk`, `v3/crates/domain_*`).
-- V3 consumes parser output through adapters plus the V3 `ingest_formats` crate.
+- [cli/](cli/README.md): convenience CLI for IMAP sync + export.
+- `imap.example.toml`: config template for the CLI.
+- `./docs/json-contract.md`: JSON profile field contract + ingestion guidance.
+- `./docs/lifecycle-lexicon.md`: Lifecycle lexicon documentation.
+- `./roadmap.md`: offline local-LLM review workflow for deterministic parser improvement.

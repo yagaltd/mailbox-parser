@@ -286,7 +286,10 @@ impl LifecycleLexicon {
         Self::from_config(cfg)
     }
 
-    pub fn from_yaml_str_with_override_jsonl(base_yaml_raw: &str, ops_jsonl_raw: &str) -> Result<Self> {
+    pub fn from_yaml_str_with_override_jsonl(
+        base_yaml_raw: &str,
+        ops_jsonl_raw: &str,
+    ) -> Result<Self> {
         let mut cfg: LexiconConfig =
             serde_yaml::from_str(base_yaml_raw).context("deserialize yaml")?;
         let ops = parse_override_ops_jsonl(ops_jsonl_raw)?;
@@ -434,7 +437,14 @@ impl LifecycleLexicon {
         let event_meeting_invite_verb_patterns = compile_patterns_or_default(
             "event_meeting_invite_verb_patterns",
             &cfg.event_meeting_invite_verb_patterns,
-            &["join", "invited", "invite", "scheduled", "appointment", "call"],
+            &[
+                "join",
+                "invited",
+                "invite",
+                "scheduled",
+                "appointment",
+                "call",
+            ],
         )?;
         let event_deadline_patterns = compile_patterns_or_default(
             "event_deadline_patterns",
@@ -731,8 +741,8 @@ fn parse_override_ops_jsonl(raw: &str) -> Result<Vec<LifecycleOverrideOp>> {
         if l.is_empty() || l.starts_with('#') {
             continue;
         }
-        let op: LifecycleOverrideOp =
-            serde_json::from_str(l).with_context(|| format!("invalid JSONL op at line {}", idx + 1))?;
+        let op: LifecycleOverrideOp = serde_json::from_str(l)
+            .with_context(|| format!("invalid JSONL op at line {}", idx + 1))?;
         out.push(op);
     }
     Ok(out)

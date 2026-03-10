@@ -391,60 +391,171 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
         "schreef",
         "napisał",
         "skrev",
+        "napsal",  // Czech "wrote"
+        "napísal", // Slovak "wrote"
     ];
     const SALUTATION_PREFIXES: &[&str] = &[
+        // English
         "hi",
         "hello",
         "dear",
+        "hey",
+        "good morning",
+        "good afternoon",
+        "good evening",
+        "good day",
+        "greetings",
+        "howdy",
+        // French
         "bonjour",
         "salut",
+        "coucou",
+        // Spanish
         "hola",
         "buenos",
+        "buenas",
+        "qué tal",
+        // German
         "hallo",
-        "hej",
+        "guten morgen",
+        "guten tag",
+        "guten abend",
+        // Italian
         "ciao",
+        "buongiorno",
+        "buonasera",
+        // Scandinavian
+        "hej",
+        "hei",
+        "god dag",
+        "god morgen",
+        // Polish
         "dzień dobry",
         "witam",
+        "cześć",
+        // Portuguese
+        "olá",
+        "bom dia",
+        "boa tarde",
+        // Dutch
+        "hallo",
+        "goedemorgen",
+        "goede dag",
+        // Czech/Slovak
+        "dobrý den",
+        "ahoj",
+        // Hungarian
+        "kedves",
+        "szia",
+        // Romanian
+        "bună",
+        "salut",
     ];
     const SIGNATURE_CUES: &[&str] = &[
+        // English
         "best regards",
         "kind regards",
         "regards",
         "regards,",
         "rgds",
         "your best",
-        "cdlt",
         "thanks",
         "thank you",
         "many thanks",
         "thanks and regards",
-        "merci",
-        "merci beaucoup",
-        "a+",
         "cheers",
         "sincerely",
-        "mit freundlichen grüßen",
-        "freundliche grüße / best regards",
-        "viele grüße",
+        "yours truly",
+        "yours sincerely",
+        "best wishes",
+        "warm regards",
+        "with thanks",
+        // French
+        "merci",
+        "merci beaucoup",
         "cordialement",
         "bien cordialement",
         "bien à vous",
+        "à bientôt",
+        "sincèrement",
+        "amicalement",
+        "cdlt",
+        "a+",
+        // Spanish
         "saludos",
         "un saludo",
+        "saludos cordiales",
+        "atte.",
+        "atentamente",
+        "muchas gracias",
+        "un abrazo",
+        // German
+        "mit freundlichen grüßen",
+        "freundliche grüße / best regards",
+        "viele grüße",
+        "herzliche grüße",
+        "mfg",
+        "beste grüße",
+        // Italian
         "distinti saluti",
+        "cordiali saluti",
+        "grazie",
+        "tantissimi saluti",
+        // Dutch
         "vriendelijke groet",
+        "met vriendelijke groet",
+        "groet",
+        "hartelijke groet",
+        // Polish
         "pozdrawiam",
+        "z poważaniem",
+        "z wyrazami szacunku",
+        // Scandinavian
         "med vänlig hälsning",
+        "med vennlig hilsen",
+        "mvh",
+        "vh",
+        "venlig hilsen",
+        // Portuguese
+        "com melhores cumprimentos",
+        "cumprimentos",
+        "obrigado",
+        "obrigada",
+        // Czech/Slovak
+        "s pozdravem",
+        "s úctou",
+        // Romanian
+        "cu respect",
+        "toate cele bune",
     ];
     const MOBILE_SIGNATURE_CUES: &[&str] = &[
+        // English
         "sent from my",
         "get outlook for",
         "sent from outlook",
+        "sent from iphone",
+        "sent from android",
+        "sent from mobile",
+        // French
         "envoyé depuis mon",
+        "envoyé de mon",
+        // Spanish
         "enviado desde mi",
+        "enviado desde mi iphone",
+        "enviado desde mi android",
+        // German
         "gesendet von meinem",
+        "gesendet von meinem iphone",
+        "gesendet von meinem android",
+        // Italian
         "inviato da",
+        "inviato dal mio",
+        // Polish
         "wysłane z",
+        "wysłane z mojego",
+        // Portuguese
+        "enviado do meu",
+        "enviado do iphone",
     ];
     const DISCLAIMER_CUES: &[&str] = &[
         "disclaimer:",
@@ -458,6 +569,52 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
         "ten e-mail",
         "ta wiadomość",
     ];
+    const FOOTER_CUES: &[&str] = &[
+        // English
+        "unsubscribe",
+        "update your preferences",
+        "manage your subscription",
+        "update email settings",
+        "email updates",
+        "click here to",
+        "manage subscriptions",
+        "update your email",
+        "this email was sent to",
+        "you received this email because",
+        "if you no longer wish to",
+        "to stop receiving",
+        // French
+        "se désabonner",
+        "mettre à jour vos préférences",
+        "gérer votre abonnement",
+        "cliquez ici pour",
+        // Spanish
+        "darse de baja",
+        "actualizar sus preferencias",
+        "gestionar su suscripción",
+        // German
+        "abbestellen",
+        "abo verwalten",
+        "einstellungen aktualisieren",
+        // Italian
+        "annulla iscrizione",
+        "gestisci abbonamento",
+        // Portuguese
+        "cancelar inscrição",
+        "atualizar preferências",
+        // Polish
+        "wypisać się",
+        "zaktualizuj preferencje",
+        // Platform/Newsletter patterns
+        "the kajabi team",
+        "contact kajabi",
+        "official help site",
+        "kajabi support",
+        "all rights reserved",
+        // Newsletter patterns
+        "founders & ai",
+        "built an ai tool",
+    ];
 
     let is_forward_marker_line = |t: &str| {
         let tl = line_core(t);
@@ -468,7 +625,9 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
         let tl_raw = line_core(t);
         let tl = tl_raw.trim_matches('-').trim().to_string();
         let tl_header = normalize_space_before_colon(&tl);
-        let locale_on_prefix = ["on ", "le ", "el ", "am ", "il ", "op ", "w dniu ", "den "];
+        let locale_on_prefix = [
+            "on ", "le ", "el ", "am ", "il ", "op ", "w dniu ", "den ", "v ",
+        ];
         let ends_like_wrote = WROTE_TOKENS
             .iter()
             .any(|w| tl.ends_with(':') || tl.ends_with(w));
@@ -549,6 +708,77 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
     let mut consecutive_gt = 0usize;
     let mut first_gt_line_start = 0usize;
 
+    // Define Zendesk quote marker and datetime detection here for use in quote detection
+    let is_zendesk_quote_marker_outer = |t: &str| -> bool {
+        let trimmed = t.trim();
+        trimmed.starts_with('*')
+            && trimmed.ends_with('*')
+            && trimmed.len() > 2
+            && trimmed[1..trimmed.len() - 1]
+                .chars()
+                .all(|c| c.is_alphabetic() || c.is_whitespace() || c == '\'')
+    };
+
+    let is_datetime_line_outer = |t: &str| -> bool {
+        let trimmed = t.trim();
+        if trimmed.len() > 50 {
+            return false;
+        }
+        let mut has_day = false;
+        let mut has_month = false;
+        let mut has_year = false;
+        let words: Vec<&str> = trimmed.split_whitespace().collect();
+        for word in &words {
+            let clean_word = word.trim_matches(|c| c == ',' || c == ':' || c == '.' || c == ';');
+            if clean_word.len() == 4 && clean_word.chars().all(|c| c.is_ascii_digit()) {
+                has_year = true;
+            } else if clean_word.parse::<u32>().is_ok() {
+                has_day = true;
+            } else {
+                let month_names = [
+                    "jan",
+                    "feb",
+                    "mar",
+                    "apr",
+                    "may",
+                    "jun",
+                    "jul",
+                    "aug",
+                    "sep",
+                    "oct",
+                    "nov",
+                    "dec",
+                    "january",
+                    "february",
+                    "march",
+                    "april",
+                    "june",
+                    "july",
+                    "august",
+                    "september",
+                    "october",
+                    "november",
+                    "december",
+                ];
+                let lower = word
+                    .trim_matches(|c| c == ',' || c == ':' || c == '.')
+                    .to_lowercase();
+                if month_names.iter().any(|m| lower.contains(m)) {
+                    has_month = true;
+                }
+            }
+        }
+        let has_time = words.iter().any(|w| {
+            let parts: Vec<&str> = w.split(':').collect();
+            parts.len() == 2
+                && parts
+                    .iter()
+                    .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
+        });
+        (has_day && has_month && has_year && (has_time || trimmed.len() < 30))
+            || (has_time && has_day && has_month && has_year)
+    };
+
     for (idx, (s, e)) in lines.iter().copied().enumerate() {
         let line = text.get(s..e).unwrap_or("");
         let t = line.trim();
@@ -562,6 +792,18 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
             break;
         }
         if is_quote_marker_line(t) {
+            quote_start = Some((s, EmailBlockKind::Quoted));
+            break;
+        }
+
+        // NEW: Detect Zendesk quote markers (*Name*) as quote start
+        if is_zendesk_quote_marker_outer(t) {
+            quote_start = Some((s, EmailBlockKind::Quoted));
+            break;
+        }
+
+        // NEW: Detect datetime lines as quote start (indicates quoted content)
+        if is_datetime_line_outer(t) {
             quote_start = Some((s, EmailBlockKind::Quoted));
             break;
         }
@@ -726,11 +968,129 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
             && (t.ends_with('.') || t.ends_with('!') || t.ends_with('?') || t.ends_with(':'))
     };
 
+    // Detect Zendesk-style quote markers like *David*, *John Smith*
+    let is_zendesk_quote_marker = |t: &str| -> bool {
+        let trimmed = t.trim();
+        // Must be: starts with *, ends with *, contains text in between
+        // Content should be mostly alphabetic (name)
+        trimmed.starts_with('*')
+            && trimmed.ends_with('*')
+            && trimmed.len() > 2
+            && trimmed[1..trimmed.len() - 1]
+                .chars()
+                .all(|c| c.is_alphabetic() || c.is_whitespace() || c == '\'')
+    };
+
+    // Detect lines that are primarily date/time stamps (indicating quoted content)
+    let is_datetime_line = |t: &str| -> bool {
+        let trimmed = t.trim();
+        // Must be relatively short to be a datetime line
+        if trimmed.len() > 50 {
+            return false;
+        }
+        // Simple pattern matching without regex
+        let has_day_month_year = {
+            let mut has_day = false;
+            let mut has_month = false;
+            let mut has_year = false;
+            let words: Vec<&str> = trimmed.split_whitespace().collect();
+            for word in &words {
+                // Strip trailing punctuation for checking
+                let clean_word =
+                    word.trim_matches(|c| c == ',' || c == ':' || c == '.' || c == ';');
+                // Check for year first (4-digit number like 2025)
+                if clean_word.len() == 4 && clean_word.chars().all(|c| c.is_ascii_digit()) {
+                    has_year = true;
+                } else if clean_word.parse::<u32>().is_ok() {
+                    // Could be a day (1-31), but also might be a year in different formats
+                    // Keep as day for now
+                    has_day = true;
+                } else {
+                    let month_names = [
+                        "jan",
+                        "feb",
+                        "mar",
+                        "apr",
+                        "may",
+                        "jun",
+                        "jul",
+                        "aug",
+                        "sep",
+                        "oct",
+                        "nov",
+                        "dec",
+                        "january",
+                        "february",
+                        "march",
+                        "april",
+                        "june",
+                        "july",
+                        "august",
+                        "september",
+                        "october",
+                        "november",
+                        "december",
+                    ];
+                    let lower = word
+                        .trim_matches(|c| c == ',' || c == ':' || c == '.')
+                        .to_lowercase();
+                    if month_names.iter().any(|m| lower.contains(m)) {
+                        has_month = true;
+                    }
+                }
+            }
+            // Check for patterns like "21 Jan 2025" or "Jan 21, 2025"
+            (has_day && has_month && has_year)
+                // Or ISO date format 2025-01-21
+                || (trimmed.len() == 10
+                    && trimmed.chars().nth(4) == Some('-')
+                    && trimmed.chars().nth(7) == Some('-'))
+        };
+        // Also match time patterns like "23:53 NZDT" or "11:30 PM EST"
+        let has_time = trimmed.split_whitespace().any(|w| {
+            // Must contain a colon, but not be just a time like "15:23"
+            // Check if it's a valid time pattern: digits:digits
+            let parts: Vec<&str> = w.split(':').collect();
+            parts.len() == 2
+                && parts
+                    .iter()
+                    .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
+        });
+        // A datetime line has both date and time, or is primarily just a date
+        (has_day_month_year && (has_time || trimmed.len() < 30)) || (has_time && has_day_month_year)
+    };
+
     for pos in (tail_start_idx..non_empty_before_quote.len()).rev() {
         let (_idx, s, e) = non_empty_before_quote[pos];
         let t = get_line((s, e)).trim();
         let core = line_core(t);
         let has_inline_signoff = inline_signature_start_offset(t).is_some();
+
+        // Step 1: Stop if we've entered quoted section (lines starting with >)
+        if t.starts_with('>') {
+            break;
+        }
+
+        // Step 1b: Stop at Zendesk quote markers (*Name*)
+        if is_zendesk_quote_marker(t) {
+            break;
+        }
+
+        // Step 1c: Stop at datetime lines (indicating quoted content from original email)
+        if is_datetime_line(t) {
+            break;
+        }
+
+        // Step 1d: Stop at quote marker lines (On ... wrote:, De: ..., Von: ..., etc.)
+        if is_quote_marker_line(t) {
+            break;
+        }
+
+        // Step 3: Stop if we've entered footer content
+        if FOOTER_CUES.iter().any(|c| core.to_lowercase().contains(c)) {
+            break;
+        }
+
         if DISCLAIMER_CUES
             .iter()
             .any(|c| core.starts_with(c) || core.contains(c))
@@ -821,6 +1181,16 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
             if t.is_empty() {
                 continue;
             }
+
+            // Stop at quoted content markers
+            if t.starts_with('>')
+                || is_zendesk_quote_marker(t)
+                || is_datetime_line(t)
+                || is_quote_marker_line(t)
+            {
+                break;
+            }
+
             let core = line_core(t);
             if !is_signature_cue_line(&core) {
                 continue;
@@ -872,6 +1242,16 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
         for pos in (tail_start_idx..non_empty_before_quote.len()).rev() {
             let (_idx, s, e) = non_empty_before_quote[pos];
             let t = get_line((s, e)).trim();
+
+            // Stop at quoted content markers
+            if t.starts_with('>')
+                || is_zendesk_quote_marker(t)
+                || is_datetime_line(t)
+                || is_quote_marker_line(t)
+            {
+                break;
+            }
+
             let core = line_core(t);
             let score = signature_contact_score(t);
             let supportive = score > 0
@@ -987,6 +1367,41 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
         && dis < sig
     {
         disclaimer_start = None;
+    }
+
+    if signature_start.is_none() {
+        let footer_scan_end = disclaimer_start.unwrap_or(quote_byte_start);
+        let prequote = text.get(0..footer_scan_end).unwrap_or("");
+        let lower_full = prequote.to_ascii_lowercase();
+        let footer_markers = [
+            "all rights reserved",
+            "manage your notification settings",
+            "unsubscribe",
+            "do not reply",
+            "please do not reply",
+            "notification settings",
+            "copyright",
+        ];
+        let marker_hits = |s: &str| footer_markers.iter().filter(|m| s.contains(**m)).count();
+
+        if let Some(cut) = footer_markers
+            .iter()
+            .filter_map(|m| lower_full.find(m))
+            .filter(|idx| *idx > prequote.len() / 3)
+            .min()
+        {
+            let suffix_lower = &lower_full[cut..];
+            let tail = prequote[cut..].trim();
+            let head = prequote[..cut].trim();
+            if (marker_hits(suffix_lower) >= 2
+                || (marker_hits(suffix_lower) >= 1
+                    && (suffix_lower.contains("http://") || suffix_lower.contains("https://"))))
+                && head.len() >= 24
+                && tail.len() >= 24
+            {
+                signature_start = Some(cut);
+            }
+        }
     }
 
     let mut out = Vec::new();

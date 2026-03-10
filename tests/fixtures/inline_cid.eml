@@ -1,0 +1,18 @@
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Inline Image
+MIME-Version: 1.0
+Content-Type: multipart/related; boundary="b"
+
+--b
+Content-Type: text/html; charset=utf-8
+
+<html><body><p>Hello</p><img src="cid:image1@cid" alt="logo"></body></html>
+--b
+Content-Type: image/png
+Content-Transfer-Encoding: base64
+Content-ID: <image1@cid>
+Content-Disposition: inline; filename="logo.png"
+
+iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2uYf8AAAAASUVORK5CYII=
+--b--

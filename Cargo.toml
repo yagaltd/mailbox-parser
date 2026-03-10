@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 anyhow = "1"
 chrono = { version = "0.4", features = ["serde"] }
-contacts = { path = "../contacts" }
+contacts = { path = "./contacts" }
 imap = "3.0.0-alpha.15"
 mail-parser = "0.10"
 native-tls = "0.2"

@@ -1,0 +1,10 @@
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Hello Bob
+Message-ID: <msg-1@example.com>
+In-Reply-To: <msg-0@example.com>
+References: <msg-0@example.com> <msg-00@example.com>
+Date: Tue, 01 Jan 2030 00:00:00 +0000
+Content-Type: text/plain; charset="utf-8"
+
+Hello Bob.

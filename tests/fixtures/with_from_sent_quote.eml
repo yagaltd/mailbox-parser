@@ -1,0 +1,16 @@
+Subject: Re: Project Update
+From: Sender <sender@example.com>
+To: Recipient <recipient@example.com>
+Date: Tue, 21 Jan 2026 12:34:56 +0000
+Message-ID: <msg-3@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+REPLY_ONLY_TOKEN_XYZ
+
+From: Someone <someone@example.com>
+Sent: Monday, 20 Jan 2026 1:00 PM
+To: Sender <sender@example.com>
+Subject: Project Update
+
+QUOTED_TOKEN_FROM_SENT_456

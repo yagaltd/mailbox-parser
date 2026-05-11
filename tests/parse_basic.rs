@@ -69,6 +69,8 @@ fn thread_fallback_groups_by_subject_and_participants_when_headers_missing() {
             uid: 1,
             internal_date: None,
             flags: vec![],
+            x_gm_thrid: None,
+            x_gm_labels: vec![],
             modseq: None,
             rfc822_size: None,
             parsed: parsed1,
@@ -78,6 +80,8 @@ fn thread_fallback_groups_by_subject_and_participants_when_headers_missing() {
             uid: 2,
             internal_date: None,
             flags: vec![],
+            x_gm_thrid: None,
+            x_gm_labels: vec![],
             modseq: None,
             rfc822_size: None,
             parsed: parsed2,
@@ -88,6 +92,68 @@ fn thread_fallback_groups_by_subject_and_participants_when_headers_missing() {
     let threads = thread_messages(&synced);
     assert_eq!(threads.len(), 1);
     assert_eq!(threads[0].messages.len(), 2);
+}
+
+#[test]
+fn thread_and_canonical_propagate_imap_metadata_present() {
+    use mailbox_parser::{canonicalize_threads, thread_messages};
+
+    let msg = b"Message-Id: <m1@example.com>\nSubject: Hello\nFrom: Alice <alice@example.com>\nTo: Bob <bob@example.com>\nDate: Tue, 20 Jan 2026 12:34:56 +0000\nContent-Type: text/plain; charset=utf-8\n\nBody\n";
+    let parsed = parse_rfc822(msg).expect("parse");
+
+    let synced = vec![mailbox_parser::SyncedEmail {
+        uid: 42,
+        internal_date: Some("2026-01-20T12:34:56Z".to_string()),
+        flags: vec!["\\Seen".to_string(), "\\Flagged".to_string()],
+        x_gm_thrid: Some(123456789),
+        x_gm_labels: vec!["\"Important\"".to_string(), "inbox".to_string()],
+        modseq: Some(7),
+        rfc822_size: Some(msg.len() as u32),
+        parsed,
+        raw: msg.to_vec(),
+    }];
+
+    let threads = thread_messages(&synced);
+    assert_eq!(threads.len(), 1);
+    assert_eq!(threads[0].messages[0].flags, vec!["\\Seen", "\\Flagged"]);
+    assert_eq!(threads[0].messages[0].x_gm_thrid, Some(123456789));
+    assert_eq!(threads[0].messages[0].x_gm_labels, vec!["\"Important\"", "inbox"]);
+
+    let canonical = canonicalize_threads(&threads);
+    assert_eq!(canonical[0].messages[0].flags, vec!["\\Seen", "\\Flagged"]);
+    assert_eq!(canonical[0].messages[0].x_gm_thrid, Some(123456789));
+    assert_eq!(canonical[0].messages[0].x_gm_labels, vec!["\"Important\"", "inbox"]);
+}
+
+#[test]
+fn thread_and_canonical_propagate_imap_metadata_absent() {
+    use mailbox_parser::{canonicalize_threads, thread_messages};
+
+    let msg = b"Message-Id: <m1@example.com>\nSubject: Hello\nFrom: Alice <alice@example.com>\nTo: Bob <bob@example.com>\nDate: Tue, 20 Jan 2026 12:34:56 +0000\nContent-Type: text/plain; charset=utf-8\n\nBody\n";
+    let parsed = parse_rfc822(msg).expect("parse");
+
+    let synced = vec![mailbox_parser::SyncedEmail {
+        uid: 42,
+        internal_date: Some("2026-01-20T12:34:56Z".to_string()),
+        flags: vec![],
+        x_gm_thrid: None,
+        x_gm_labels: vec![],
+        modseq: Some(7),
+        rfc822_size: Some(msg.len() as u32),
+        parsed,
+        raw: msg.to_vec(),
+    }];
+
+    let threads = thread_messages(&synced);
+    assert_eq!(threads.len(), 1);
+    assert!(threads[0].messages[0].flags.is_empty());
+    assert_eq!(threads[0].messages[0].x_gm_thrid, None);
+    assert!(threads[0].messages[0].x_gm_labels.is_empty());
+
+    let canonical = canonicalize_threads(&threads);
+    assert!(canonical[0].messages[0].flags.is_empty());
+    assert_eq!(canonical[0].messages[0].x_gm_thrid, None);
+    assert!(canonical[0].messages[0].x_gm_labels.is_empty());
 }
 
 #[test]

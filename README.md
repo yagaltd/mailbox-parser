@@ -303,6 +303,30 @@ println!(
 # Ok::<(), anyhow::Error>(())
 ```
 
+### IMAP metadata + streaming tests
+
+Offline unit tests (default `cargo test`) cover:
+
+- metadata propagation (`SyncedEmail -> ParsedThreadMessage -> CanonicalMessage`)
+- Gmail fetch attribute query shapes (`X-GM-THRID` / `X-GM-LABELS`)
+- Gmail metadata response parsing
+
+Manual real-account smoke tests are env-gated and ignored by default:
+
+```bash
+cargo test gmail_imap -- --ignored --nocapture
+```
+
+Required env vars:
+
+- `GMAIL_IMAP_HOST` (usually `imap.gmail.com`)
+- `GMAIL_IMAP_PORT` (usually `993`)
+- `GMAIL_IMAP_USER`
+- `GMAIL_IMAP_APP_PASSWORD`
+- `GMAIL_IMAP_MAILBOX` (usually `INBOX`)
+
+These smoke tests validate batch-vs-streaming parity and Gmail capability/metadata behavior without adding live-account dependency to default CI.
+
 ## Notes / limitations
 
 - IMAP is **TLS only** (port `993` by default).

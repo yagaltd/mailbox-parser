@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, anyhow};
@@ -100,6 +101,10 @@ pub struct SyncedEmail {
     pub uid: u32,
     pub internal_date: Option<String>,
     pub flags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub x_gm_thrid: Option<u64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub x_gm_labels: Vec<String>,
     pub modseq: Option<u64>,
     pub rfc822_size: Option<u32>,
     pub parsed: ParsedEmail,
@@ -225,6 +230,24 @@ pub fn sync_imap_delta(
     prior: &ImapSyncState,
     options: ImapSyncOptions,
 ) -> Result<ImapSyncResult> {
+    sync_imap_delta_inner(account, prior, options, None)
+}
+
+pub fn sync_imap_delta_streaming(
+    account: &ImapAccountConfig,
+    prior: &ImapSyncState,
+    options: ImapSyncOptions,
+    on_message: &mut dyn FnMut(SyncedEmail) -> Result<()>,
+) -> Result<ImapSyncResult> {
+    sync_imap_delta_inner(account, prior, options, Some(on_message))
+}
+
+fn sync_imap_delta_inner(
+    account: &ImapAccountConfig,
+    prior: &ImapSyncState,
+    options: ImapSyncOptions,
+    mut on_message: Option<&mut dyn FnMut(SyncedEmail) -> Result<()>>,
+) -> Result<ImapSyncResult> {
     let account_id = account
         .account_id
         .clone()
@@ -242,11 +265,10 @@ pub fn sync_imap_delta(
     let caps = session.capabilities().context("imap capability")?;
     let supports_modseq = caps.has_str("CONDSTORE") || caps.has_str("QRESYNC");
     let supports_qresync = caps.has_str("QRESYNC");
+    let supports_gmail_ext = caps.has_str("X-GM-EXT-1");
     if caps.has_str("ENABLE") && supports_qresync {
-        // Best-effort: some servers require explicit ENABLE before they will emit VANISHED.
         let _ = session.run_command_and_check_ok("ENABLE QRESYNC");
     }
-    // `Capability` does not implement Display; debug strings are sufficient for diagnostics.
     let server_capabilities = caps.iter().map(|c| format!("{c:?}")).collect::<Vec<_>>();
 
     let mailbox_info = session
@@ -262,8 +284,6 @@ pub fn sync_imap_delta(
     }
     state.uidvalidity = uidvalidity.or(state.uidvalidity);
 
-    // IMPORTANT: do not advance the modseq checkpoint before fetching CHANGEDSINCE,
-    // otherwise we can skip changes that happened since the previous checkpoint.
     let changed_since = state.highest_modseq.unwrap_or(0);
     let mailbox_highest_modseq = mailbox_info.highest_mod_seq;
 
@@ -272,9 +292,16 @@ pub fn sync_imap_delta(
     let mut mailbox_uids: Option<Vec<u32>> = None;
     let mut used_vanished = false;
 
+    let mut emit = |email: SyncedEmail| -> Result<()> {
+        if let Some(cb) = on_message.as_mut() {
+            cb(email)
+        } else {
+            messages.push(email);
+            Ok(())
+        }
+    };
+
     if options.unseen_only {
-        // `UNSEEN` is a selection mode (mutable flag). We intentionally do not advance
-        // `last_uid` / `highest_modseq` checkpoints here.
         let mut uids = session
             .uid_search("UNSEEN")
             .context("imap uid_search unseen")?
@@ -282,7 +309,6 @@ pub fn sync_imap_delta(
             .collect::<Vec<u32>>();
         uids.sort_unstable();
 
-        // Avoid overlong commands: fetch in chunks.
         let chunk_size = 200usize;
         for chunk in uids.chunks(chunk_size) {
             if chunk.is_empty() {
@@ -294,15 +320,18 @@ pub fn sync_imap_delta(
                 .collect::<Vec<_>>()
                 .join(",");
 
-            let query = if supports_modseq {
-                "(UID RFC822 INTERNALDATE FLAGS RFC822.SIZE MODSEQ)"
-            } else {
-                "(UID RFC822 INTERNALDATE FLAGS RFC822.SIZE)"
-            };
+            let query = build_fetch_attrs(supports_modseq, supports_gmail_ext);
 
             let fetches = session
-                .uid_fetch(set, query)
+                .uid_fetch(set.clone(), query)
                 .context("imap uid_fetch unseen")?;
+            let gmail_meta = fetch_gmail_metadata_map(
+                &mut session,
+                &set,
+                query,
+                supports_gmail_ext,
+                "imap uid_fetch unseen gmail metadata",
+            )?;
 
             for fetch in fetches.iter() {
                 let Some(uid) = fetch.uid else {
@@ -321,21 +350,23 @@ pub fn sync_imap_delta(
                 let internal_date = fetch.internal_date().map(|d| d.to_rfc3339());
                 let modseq = fetch.mod_seq();
                 let rfc822_size = fetch.size.map(|s| s as u32);
+                let (x_gm_thrid, x_gm_labels) = gmail_fields_for_fetch(fetch, &gmail_meta);
 
-                messages.push(SyncedEmail {
+                emit(SyncedEmail {
                     uid,
                     internal_date,
                     flags,
+                    x_gm_thrid,
+                    x_gm_labels,
                     modseq,
                     rfc822_size,
                     parsed,
                     raw,
-                });
+                })?;
             }
         }
 
         state.last_sync_ms = now_ms();
-
         let _ = session.logout();
 
         return Ok(ImapSyncResult {
@@ -350,15 +381,12 @@ pub fn sync_imap_delta(
         });
     }
 
-    // Use MODSEQ-based incremental sync only once we have an established checkpoint.
     if supports_modseq && changed_since > 0 {
-        // Most servers expect the attribute list to be wrapped in parentheses.
-        // If the server supports QRESYNC, request VANISHED so we can record expunges.
+        let query_with_vanished = build_changed_since_query(changed_since, true, supports_gmail_ext);
+        let query_without_vanished =
+            build_changed_since_query(changed_since, false, supports_gmail_ext);
         let fetches = if supports_qresync {
-            let query = format!(
-                "(UID RFC822 INTERNALDATE FLAGS RFC822.SIZE MODSEQ) (CHANGEDSINCE {changed_since} VANISHED)"
-            );
-            match session.uid_fetch("1:*", query) {
+            match session.uid_fetch("1:*", query_with_vanished.clone()) {
                 Ok(fetches) => {
                     used_vanished = true;
                     for resp in session.take_all_unsolicited() {
@@ -370,25 +398,28 @@ pub fn sync_imap_delta(
                     }
                     fetches
                 }
-                Err(_) => {
-                    // Fallback: some servers advertise QRESYNC but reject VANISHED unless fully
-                    // enabled via SELECT (QRESYNC) parameters.
-                    let query = format!(
-                        "(UID RFC822 INTERNALDATE FLAGS RFC822.SIZE MODSEQ) (CHANGEDSINCE {changed_since})"
-                    );
-                    session
-                        .uid_fetch("1:*", query)
-                        .context("imap uid_fetch changed since (fallback without VANISHED)")?
-                }
+                Err(_) => session
+                    .uid_fetch("1:*", query_without_vanished.clone())
+                    .context("imap uid_fetch changed since (fallback without VANISHED)")?,
             }
         } else {
-            let query = format!(
-                "(UID RFC822 INTERNALDATE FLAGS RFC822.SIZE MODSEQ) (CHANGEDSINCE {changed_since})"
-            );
             session
-                .uid_fetch("1:*", query)
+                .uid_fetch("1:*", query_without_vanished.clone())
                 .context("imap uid_fetch changed since")?
         };
+
+        let metadata_query = if supports_qresync && used_vanished {
+            query_with_vanished.as_str()
+        } else {
+            query_without_vanished.as_str()
+        };
+        let gmail_meta = fetch_gmail_metadata_map(
+            &mut session,
+            "1:*",
+            metadata_query,
+            supports_gmail_ext,
+            "imap uid_fetch changed since gmail metadata",
+        )?;
 
         let mut max_seen_modseq = changed_since;
         for fetch in fetches.iter() {
@@ -408,24 +439,26 @@ pub fn sync_imap_delta(
             let internal_date = fetch.internal_date().map(|d| d.to_rfc3339());
             let modseq = fetch.mod_seq();
             let rfc822_size = fetch.size.map(|s| s as u32);
+            let (x_gm_thrid, x_gm_labels) = gmail_fields_for_fetch(fetch, &gmail_meta);
 
             if let Some(ms) = fetch.mod_seq() {
                 max_seen_modseq = max_seen_modseq.max(ms);
             }
 
-            messages.push(SyncedEmail {
+            emit(SyncedEmail {
                 uid,
                 internal_date,
                 flags,
+                x_gm_thrid,
+                x_gm_labels,
                 modseq,
                 rfc822_size,
                 parsed,
                 raw,
-            });
+            })?;
             state.last_uid = state.last_uid.max(uid);
         }
 
-        // Advance checkpoint to the max modseq we observed (or mailbox HIGHESTMODSEQ if higher).
         let mut next = max_seen_modseq;
         if let Some(h) = mailbox_highest_modseq {
             next = next.max(h);
@@ -434,9 +467,17 @@ pub fn sync_imap_delta(
     } else {
         let start = state.last_uid.saturating_add(1).max(1);
         let seq = format!("{start}:*");
+        let query = build_fetch_attrs(false, supports_gmail_ext);
         let fetches = session
-            .uid_fetch(seq, "(UID RFC822 INTERNALDATE FLAGS RFC822.SIZE)")
+            .uid_fetch(seq.clone(), query)
             .context("imap uid_fetch new messages")?;
+        let gmail_meta = fetch_gmail_metadata_map(
+            &mut session,
+            &seq,
+            query,
+            supports_gmail_ext,
+            "imap uid_fetch new messages gmail metadata",
+        )?;
         for fetch in fetches.iter() {
             let Some(uid) = fetch.uid else {
                 continue;
@@ -454,19 +495,21 @@ pub fn sync_imap_delta(
             let internal_date = fetch.internal_date().map(|d| d.to_rfc3339());
             let modseq = fetch.mod_seq();
             let rfc822_size = fetch.size.map(|s| s as u32);
-            messages.push(SyncedEmail {
+            let (x_gm_thrid, x_gm_labels) = gmail_fields_for_fetch(fetch, &gmail_meta);
+            emit(SyncedEmail {
                 uid,
                 internal_date,
                 flags,
+                x_gm_thrid,
+                x_gm_labels,
                 modseq,
                 rfc822_size,
                 parsed,
                 raw,
-            });
+            })?;
             state.last_uid = state.last_uid.max(uid);
         }
 
-        // If the server supports MODSEQ, record its current highest value as our initial checkpoint.
         if supports_modseq {
             if let Some(h) = mailbox_highest_modseq {
                 state.highest_modseq = Some(state.highest_modseq.unwrap_or(0).max(h));
@@ -501,6 +544,109 @@ pub fn sync_imap_delta(
         vanished_uids,
         mailbox_uids,
     })
+}
+
+fn build_fetch_attrs(supports_modseq: bool, supports_gmail_ext: bool) -> &'static str {
+    match (supports_modseq, supports_gmail_ext) {
+        (true, true) => "(UID RFC822 INTERNALDATE FLAGS RFC822.SIZE MODSEQ X-GM-THRID X-GM-LABELS)",
+        (true, false) => "(UID RFC822 INTERNALDATE FLAGS RFC822.SIZE MODSEQ)",
+        (false, true) => "(UID RFC822 INTERNALDATE FLAGS RFC822.SIZE X-GM-THRID X-GM-LABELS)",
+        (false, false) => "(UID RFC822 INTERNALDATE FLAGS RFC822.SIZE)",
+    }
+}
+
+fn build_changed_since_query(
+    changed_since: u64,
+    with_vanished: bool,
+    supports_gmail_ext: bool,
+) -> String {
+    let attrs = build_fetch_attrs(true, supports_gmail_ext);
+    if with_vanished {
+        format!("{attrs} (CHANGEDSINCE {changed_since} VANISHED)")
+    } else {
+        format!("{attrs} (CHANGEDSINCE {changed_since})")
+    }
+}
+
+fn fetch_gmail_metadata_map(
+    session: &mut imap::Session<imap::Connection>,
+    sequence_set: &str,
+    query: &str,
+    supports_gmail_ext: bool,
+    context_label: &str,
+) -> Result<HashMap<u32, (Option<u64>, Vec<String>)>> {
+    if !supports_gmail_ext {
+        return Ok(HashMap::new());
+    }
+
+    let raw = session
+        .run_command_and_read_response(format!("UID FETCH {sequence_set} {query}"))
+        .with_context(|| context_label.to_string())?;
+
+    parse_gmail_metadata_from_uid_fetch_response(&raw)
+}
+
+fn parse_gmail_metadata_from_uid_fetch_response(
+    raw: &[u8],
+) -> Result<HashMap<u32, (Option<u64>, Vec<String>)>> {
+    let mut out = HashMap::new();
+    let mut input = raw;
+
+    while !input.is_empty() {
+        let parsed = imap_proto::parser::parse_response(input);
+        let (rest, response) = match parsed {
+            Ok(v) => v,
+            Err(_) => break,
+        };
+
+        if let imap_proto::types::Response::Fetch(_, attrs) = response {
+            let mut uid: Option<u32> = None;
+            let mut x_gm_thrid: Option<u64> = None;
+            let mut x_gm_labels: Vec<String> = Vec::new();
+
+            for attr in attrs {
+                match attr {
+                    imap_proto::types::AttributeValue::Uid(v) => uid = Some(v),
+                    imap_proto::types::AttributeValue::GmailThrId(v) => x_gm_thrid = Some(v),
+                    imap_proto::types::AttributeValue::GmailLabels(labels) => {
+                        x_gm_labels = labels.into_iter().map(|v| v.into_owned()).collect();
+                    }
+                    _ => {}
+                }
+            }
+
+            if let Some(uid) = uid {
+                out.insert(uid, (x_gm_thrid, x_gm_labels));
+            }
+        }
+
+        input = rest;
+    }
+
+    Ok(out)
+}
+
+fn gmail_fields_for_fetch(
+    fetch: &imap::types::Fetch<'_>,
+    metadata_map: &HashMap<u32, (Option<u64>, Vec<String>)>,
+) -> (Option<u64>, Vec<String>) {
+    let labels_from_fetch = fetch
+        .gmail_labels()
+        .map(|it| it.map(|x| x.to_string()).collect::<Vec<_>>())
+        .unwrap_or_default();
+
+    if let Some(uid) = fetch.uid {
+        if let Some((thrid, labels)) = metadata_map.get(&uid) {
+            let merged = if labels.is_empty() {
+                labels_from_fetch
+            } else {
+                labels.clone()
+            };
+            return (*thrid, merged);
+        }
+    }
+
+    (None, labels_from_fetch)
 }
 
 fn connect(account: &ImapAccountConfig) -> Result<imap::Session<imap::Connection>> {
@@ -538,4 +684,54 @@ fn now_ms() -> i64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        build_changed_since_query, build_fetch_attrs, parse_gmail_metadata_from_uid_fetch_response,
+    };
+
+    #[test]
+    fn fetch_attrs_include_gmail_when_supported() {
+        let attrs = build_fetch_attrs(true, true);
+        assert_eq!(
+            attrs,
+            "(UID RFC822 INTERNALDATE FLAGS RFC822.SIZE MODSEQ X-GM-THRID X-GM-LABELS)"
+        );
+    }
+
+    #[test]
+    fn fetch_attrs_exclude_gmail_when_not_supported() {
+        let attrs = build_fetch_attrs(false, false);
+        assert_eq!(attrs, "(UID RFC822 INTERNALDATE FLAGS RFC822.SIZE)");
+    }
+
+    #[test]
+    fn fetch_attrs_include_gmail_without_modseq() {
+        let attrs = build_fetch_attrs(false, true);
+        assert_eq!(
+            attrs,
+            "(UID RFC822 INTERNALDATE FLAGS RFC822.SIZE X-GM-THRID X-GM-LABELS)"
+        );
+    }
+
+    #[test]
+    fn changed_since_query_toggles_vanished() {
+        let with_vanished = build_changed_since_query(12, true, true);
+        assert!(with_vanished.contains("CHANGEDSINCE 12 VANISHED"));
+
+        let without_vanished = build_changed_since_query(12, false, true);
+        assert!(without_vanished.contains("CHANGEDSINCE 12)"));
+        assert!(!without_vanished.contains("VANISHED"));
+    }
+
+    #[test]
+    fn parse_gmail_metadata_from_fetch_response_extracts_thrid_and_labels() {
+        let raw = b"* 5 FETCH (UID 42 X-GM-THRID 1278455344230334865 X-GM-LABELS (\\Important inbox) RFC822.SIZE 12)\r\nA1 OK FETCH done\r\n";
+        let map = parse_gmail_metadata_from_uid_fetch_response(raw).expect("parse response");
+        let (thrid, labels) = map.get(&42).expect("uid 42 metadata");
+        assert_eq!(*thrid, Some(1278455344230334865));
+        assert_eq!(labels, &vec!["\\Important".to_string(), "inbox".to_string()]);
+    }
 }

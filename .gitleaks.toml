@@ -18,7 +18,7 @@ paths = [
 [[rules]]
 id = "real-email-address"
 description = "Real email address detected (not test/synthetic domain)"
-regex = '''\b[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9\-]+(?:\.[a-zA-Z0-9\-]+)+\.[a-zA-Z]{2,}\b'''
+regex = '''\b[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9\-]+(?:\.[a-zA-Z]{2,})+\b'''
 tags = ["pii", "email"]
 
 [rules.allowlist]

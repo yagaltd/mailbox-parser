@@ -1395,7 +1395,7 @@ fn parse_mail_kind_hints_detects_multilingual_newsletter_tokens() {
 #[test]
 fn parse_mail_kind_hints_prefers_newsletter_over_promotion_tie() {
     let msg = concat!(
-        "From: Digest <updates@mail.beehiiv.com>\n",
+        "From: Digest <updates@newsletter.example.com>\n",
         "To: User <user@example.com>\n",
         "Subject: Weekly newsletter with discount code\n",
         "Content-Type: text/plain; charset=utf-8\n",

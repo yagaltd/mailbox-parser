@@ -1,0 +1,134 @@
+# ────────────────────────────────────────────────
+# Gitleaks config for mailbox-parser
+# Scans for PII (emails, phones, addresses) + secrets
+# ────────────────────────────────────────────────
+
+title = "mailbox-parser PII + Secrets"
+
+# ── Global allowlist ───────────────────────────
+[allowlist]
+paths = [
+    "tests/fixtures/",
+    "target/",
+    ".git/",
+    "Cargo.lock",
+]
+
+# ── PII: Real email addresses ─────────────────
+[[rules]]
+id = "real-email-address"
+description = "Real email address detected (not test/synthetic domain)"
+regex = '''\b[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9\-]+(?:\.[a-zA-Z0-9\-]+)+\.[a-zA-Z]{2,}\b'''
+tags = ["pii", "email"]
+
+[rules.allowlist]
+regexes = [
+    '@example\.(com|org|net|io)',
+    '@test\.(com|org|net|io)',
+    '@localhost',
+    '@local',
+    '@invalid',
+    '@newsletter\.example\.com',
+    '[a-z]+@[a-z]+\.invalid',
+]
+paths = [
+    "tests/fixtures/",
+]
+
+# ── PII: Phone numbers ─────────────────────────
+# Only matches genuine phone patterns:
+#   International: +<cc> <number>  (e.g. +1 555 123 4567)
+#   US: (AREA) PREFIX-LAST4
+# Avoids timezone offsets, hex, Unicode codepoints
+[[rules]]
+id = "phone-number"
+description = "Phone number detected"
+regex = '''(?:\+\d{1,3}[-\s.]?\(?\d{1,4}\)?[-\s.]?\d{1,4}[-\s.]?\d{3,10}(?:\s*(?:ext|x|ext\.)\s*\d{1,5})?)|(?:\(?\d{3}\)?[-\s.]?\d{3}[-\s.]?\d{4}(?:\s*(?:ext|x|ext\.)\s*\d{1,5})?)'''
+tags = ["pii", "phone"]
+
+[rules.allowlist]
+regexes = [
+    # Test / fake numbers
+    '555[- .]?\d{3}[- .]?\d{4}',
+    '000[- .]?0000',
+    '123[- .]?456[- .]?7890',
+    # Timezone offsets +0000 through +1400  
+    '\+0000',
+    '\+00\s*:?\s*00',
+    '\+0[1-9]00',
+    '\+1[0-4]00',
+    # Unicode codepoints U+2xxx
+    'U\+2\d{3}',
+    # Hex string constant
+    '0123456789abcdef',
+    '0123456789',
+    # Gmail THRID (thread IDs)
+    '1278455344',
+    '1278455344230334865',
+    # Shipment tracking numbers
+    '2880126981',
+    # Device EUI fragments
+    '8520000004',
+    # Common synthetic test patterns
+    '\+49 30 1234 5678',
+    '\+33 1 23 45 67 89',
+    '\+1 905 699-9703',
+]
+paths = [
+    "tests/fixtures/",
+]
+
+# ── PII: Physical addresses (US) ───────────────
+[[rules]]
+id = "us-street-address"
+description = "Potential US street address detected"
+regex = '''\b\d{1,5}\s+[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){0,2}\s+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Court|Ct|Circle|Cir|Way|Place|Pl|Terrace|Ter|Highway|Hwy|Parkway|Pkwy|Trail|Trl)\b'''
+tags = ["pii", "address"]
+
+# ── PII: Social Security Numbers ───────────────
+[[rules]]
+id = "ssn"
+description = "US SSN detected"
+regex = '''\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b'''
+tags = ["pii", "ssn"]
+
+[rules.allowlist]
+regexes = [
+    '000[- ]?00[- ]?0000',
+    '123[- ]?45[- ]?6789',
+]
+
+# ── PII: Credit card numbers (PAN) ─────────────
+[[rules]]
+id = "credit-card"
+description = "Potential credit card number detected"
+regex = '''\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b'''
+tags = ["pii", "credit-card"]
+
+[rules.allowlist]
+regexes = [
+    '\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?0000',
+    '0000[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}',
+]
+
+# ── Secrets: generic API keys ──────────────────
+# Narrow: only matches key=value patterns where value looks like a real token
+[[rules]]
+id = "generic-api-key"
+description = "Generic API key or secret in code"
+regex = '''(?i)(?:api[_-]?key|secret|password|auth[_-]?token)[^a-z0-9]{0,10}['"`\s:=][A-Za-z0-9_\-/=+]{20,}'''
+tags = ["secret", "api"]
+
+[rules.allowlist]
+regexes = [
+    'APP_PASSWORD_OR_TOKEN',
+    'GMAIL_IMAP_APP_PASSWORD',
+    'IMAP_APP_PASSWORD',
+]
+
+# ── Secrets: AWS keys ──────────────────────────
+[[rules]]
+id = "aws-access-key"
+description = "AWS Access Key ID"
+regex = '''(?:A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}'''
+tags = ["secret", "aws"]

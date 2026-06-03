@@ -64,6 +64,7 @@ fn gmail_imap_streaming_parity_matches_batch() -> Result<()> {
     let options = ImapSyncOptions {
         force_full: true,
         unseen_only: false,
+        keep_raw: false,
     };
 
     let batch = sync_imap_delta(&account, &prior, options.clone()).context("batch sync")?;
@@ -119,6 +120,7 @@ fn gmail_imap_reports_gmail_capability_and_metadata_shape() -> Result<()> {
     let options = ImapSyncOptions {
         force_full: false,
         unseen_only: false,
+        keep_raw: false,
     };
 
     let res = sync_imap_delta(&account, &prior, options)?;

@@ -204,8 +204,8 @@ fn parse_forwarded_segment_extracts_headers_and_clean_reply() {
         "\n",
         "FYI\n\n",
         "---- Forwarded message ----\n",
-        "From: Henry Lynam <henry@minfarmtech.com>\n",
-        "To: Thomas GUILLET <thomas.guillet@edgetech.fr>\n",
+        "From: Henry <henry@example.com>\n",
+        "To: Thomas <thomas@example.com>\n",
         "Date: Fri, 18 Apr 2025 18:40:53 +0800\n",
         "Subject: Re: Reporting Interval\n",
         "\n",
@@ -225,7 +225,7 @@ fn parse_forwarded_segment_extracts_headers_and_clean_reply() {
         seg.headers
             .from
             .iter()
-            .any(|a| a.address == "henry@minfarmtech.com")
+            .any(|a| a.address == "henry@example.com")
     );
     assert!(seg.reply_text.contains("Thanks for the reply."));
     assert!(!seg.reply_text.contains("Kind regards"));
@@ -272,21 +272,21 @@ fn parse_forwarded_segment_unfolds_cc_and_strips_embedded_header_bundle() {
         "\n",
         "FYI\n\n",
         "---------- Forwarded message ---------\n",
-        "From: Haji Yakob <mohd-khiari.yakob@bsp-shell.bn>\n",
+        "From: Khiari <khiari@example.com>\n",
         "Date: Wed, Oct 15, 2025 at 8:55 AM\n",
         "Subject: RE: Sensa.io max pressure\n",
-        "To: Nicolas Guillou <nicolas.guillou@anian.co>\n",
-        "Cc: Lester Teo <lester.teo@anian.co>, Atiqah Fauzi <atiqah.fauzi@anian.co>,\n",
-        "Aktas, Ahmet Ufuk <ahmet.aktas@bsp-shell.bn>\n",
+        "To: Nicolas <nicolas@example.com>\n",
+        "Cc: Lester <lester@example.com>, Atiqah <atiqah@example.com>,\n",
+        "Ahmet <ahmet@example.com>\n",
         "\n",
         "Nicolas,\n\n",
         "Many thanks for responding to this query.\n\n",
         "Regards,\n",
         "Khiari\n\n",
-        "*From:* Nicolas Guillou <nicolas.guillou@anian.co>\n",
+        "*From:* Nicolas <nicolas@example.com>\n",
         "*Sent:* Wednesday, October 15, 2025 8:46 AM\n",
-        "*To:* Wong <wong@bsp-shell.bn>\n",
-        "*Cc:* Lester Teo <lester.teo@anian.co>; Atiqah Fauzi <atiqah.fauzi@anian.co>\n",
+        "*To:* Wong <wong@example.com>\n",
+        "*Cc:* Lester <lester@example.com>; Atiqah <atiqah@example.com>\n",
         "*Subject:* Sensa.io max pressure\n",
         "\n",
         "Hello,\n",
@@ -300,19 +300,19 @@ fn parse_forwarded_segment_unfolds_cc_and_strips_embedded_header_bundle() {
         seg.headers
             .cc
             .iter()
-            .any(|a| a.address == "lester.teo@anian.co")
+            .any(|a| a.address == "lester@example.com")
     );
     assert!(
         seg.headers
             .cc
             .iter()
-            .any(|a| a.address == "atiqah.fauzi@anian.co")
+            .any(|a| a.address == "atiqah@example.com")
     );
     assert!(
         seg.headers
             .cc
             .iter()
-            .any(|a| a.address == "ahmet.aktas@bsp-shell.bn")
+            .any(|a| a.address == "ahmet@example.com")
     );
     assert!(!seg.reply_text.contains("*From:*"));
     assert!(!seg.reply_text.contains("*Sent:*"));
@@ -603,16 +603,16 @@ fn parse_extracts_contact_hints_and_signature_entities() {
 #[test]
 fn parse_contact_hints_extracts_bare_social_domains() {
     let msg = concat!(
-        "From: Nicolas Guillou <nicolas.guillou@anian.co>\n",
-        "To: Support <support@sensa.io>\n",
+        "From: Nicolas <nicolas@example.com>\n",
+        "To: Support <support@example.com>\n",
         "Subject: signature links\n",
         "Content-Type: text/plain; charset=utf-8\n",
         "\n",
         "Best regards,\n",
-        "Nicolas Guillou\n",
+        "Nicolas\n",
         "linkedin.com/company/anian-co\n",
         "x.com/nicolasg\n",
-        "instagram.com/anian.co\n",
+        "instagram.com/example.co\n",
     );
     let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
     assert!(parsed.contact_hints.iter().any(|h| {
@@ -636,13 +636,13 @@ fn parse_contact_hints_extracts_bare_social_domains() {
 #[test]
 fn parse_contact_hints_links_url_to_sender_when_domain_matches() {
     let msg = concat!(
-        "From: Nicolas Guillou <nicolas.guillou@anian.co>\n",
-        "To: Support <support@sensa.io>\n",
+        "From: Nicolas <nicolas@example.com>\n",
+        "To: Support <support@example.com>\n",
         "Subject: signature links\n",
         "Content-Type: text/plain; charset=utf-8\n",
         "\n",
         "Best regards,\n",
-        "Nicolas Guillou\n",
+        "Nicolas\n",
         "https://linkedin.com/company/anian-co\n",
     );
     let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
@@ -683,18 +683,18 @@ fn parse_contact_hints_keeps_ambiguous_urls_unlinked() {
 #[test]
 fn parse_contact_hints_normalizes_wrapped_signature_urls() {
     let msg = concat!(
-        "From: Thomas GUILLET <thomas.guillet@edgetech.fr>\n",
-        "To: Support <support@sensa.io>\n",
+        "From: Thomas <thomas@example.com>\n",
+        "To: Support <support@example.com>\n",
         "Subject: signature wrapped urls\n",
         "Content-Type: text/plain; charset=utf-8\n",
         "\n",
         "Best regards,\n",
-        "Thomas GUILLET\n",
+        "Thomas\n",
         "[Logo]<https://www.wi6labs.com/>\n",
         "Assistance/Support<https://support.wi6labs.net/>\n",
         "www.tcb.gr<http://www.tcb.gr/>\n",
         "[2]https://otrs.example.com/customer.pl?Action=CustomerTicketZoom&TicketID=31017\n",
-        "[Portal](https://book.sensa.io/#/customer/thomas)\n",
+        "[Portal](https://book.example.com/#/customer/thomas)\n",
     );
     let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
     let urls: Vec<String> = parsed
@@ -717,7 +717,7 @@ fn parse_contact_hints_normalizes_wrapped_signature_urls() {
     );
     assert!(
         urls.iter()
-            .any(|u| u == "https://book.sensa.io/#/customer/thomas")
+            .any(|u| u == "https://book.example.com/#/customer/thomas")
     );
     assert!(
         !urls
@@ -730,7 +730,7 @@ fn parse_contact_hints_normalizes_wrapped_signature_urls() {
 fn parse_contact_hints_salutation_name_strips_greeting_prefixes() {
     let msg = concat!(
         "From: Support <support@example.com>\n",
-        "To: Aurel <aurel@example.com>\n",
+        "To: Owner <aurel@example.com>\n",
         "Subject: Greeting\n",
         "Content-Type: text/plain; charset=utf-8\n",
         "\n",
@@ -749,7 +749,7 @@ fn parse_contact_hints_salutation_name_strips_greeting_prefixes() {
 fn parse_contact_hints_salutation_greeting_only_is_ignored() {
     let msg = concat!(
         "From: Support <support@example.com>\n",
-        "To: Aurel <aurel@example.com>\n",
+        "To: Owner <aurel@example.com>\n",
         "Subject: Greeting\n",
         "Content-Type: text/plain; charset=utf-8\n",
         "\n",
@@ -767,7 +767,7 @@ fn parse_contact_hints_salutation_greeting_only_is_ignored() {
 fn parse_contact_hints_salutation_name_is_case_insensitive() {
     let msg = concat!(
         "From: Support <support@example.com>\n",
-        "To: Aurel <aurel@example.com>\n",
+        "To: Owner <aurel@example.com>\n",
         "Subject: Greeting\n",
         "Content-Type: text/plain; charset=utf-8\n",
         "\n",
@@ -786,7 +786,7 @@ fn parse_contact_hints_salutation_name_is_case_insensitive() {
 fn parse_contact_hints_salutation_truncates_inline_sentence_tail() {
     let msg = concat!(
         "From: Support <support@example.com>\n",
-        "To: Aurel <aurel@example.com>\n",
+        "To: Owner <aurel@example.com>\n",
         "Subject: Greeting\n",
         "Content-Type: text/plain; charset=utf-8\n",
         "\n",
@@ -910,7 +910,7 @@ fn parse_event_hints_detect_complete_meeting() {
 
 #[test]
 fn parse_signature_moves_kind_regards_out_of_reply_before_dash_separator() {
-    let text = "We have conducted a training session.\nKind regards\n--\nNicolas Guillou\nCEO\nnicolas@example.com";
+    let text = "We have conducted a training session.\nKind regards\n--\nNicolas\nCEO\nnicolas@example.com";
     let blocks = segment_email_body(text);
     assert!(blocks.iter().any(|b| b.kind == EmailBlockKind::Signature));
     let reply = reply_text(text, &blocks);
@@ -919,7 +919,7 @@ fn parse_signature_moves_kind_regards_out_of_reply_before_dash_separator() {
 
 #[test]
 fn parse_signature_detects_long_tail_contact_card() {
-    let text = "Thanks for the update.\n\nBest regards,\nParsa\nAlways here to help,\n[image]\nParsa Zali\nInstrumentation Technician- Shop & Logistics\nMobile +1 905 699-9703\nEmail parsa@currentinstrument.com\nwww.currentinstrument.com\nCurrent Instrumentation & Automation Inc.\n680 Tradewind Dr., Unit 11, Hamilton, ON, Canada L9G 4V5";
+    let text = "Thanks for the update.\n\nBest regards,\nParsa\nAlways here to help,\n[image]\nParsa\nInstrumentation Technician- Shop & Logistics\nMobile +1 905 699-9703\nEmail parsa@example.com\nwww.example.com\nCurrent Instrumentation & Automation Inc.\n680 Tradewind Dr., Unit 11, Hamilton, ON, Canada L9G 4V5";
     let blocks = segment_email_body(text);
     assert!(blocks.iter().any(|b| b.kind == EmailBlockKind::Signature));
     let reply = reply_text(text, &blocks);
@@ -928,24 +928,24 @@ fn parse_signature_detects_long_tail_contact_card() {
 
 #[test]
 fn parse_signature_detects_cdlt_after_double_blank_line() {
-    let text = "Message principal sur la configuration.\n\nPouvez-vous confirmer ?\n\n\ncdlt\nThomas GUILLET\nhttps://book.sensa.io/#/customer/thomas\nmailto:thomas.guillet@edgetech.fr";
+    let text = "Message principal sur la configuration.\n\nPouvez-vous confirmer ?\n\n\ncdlt\nThomas\nhttps://book.example.com/#/customer/thomas\nmailto:thomas@example.com";
     let blocks = segment_email_body(text);
     assert!(blocks.iter().any(|b| b.kind == EmailBlockKind::Signature));
     let reply = reply_text(text, &blocks);
     assert!(reply.contains("Message principal"));
     assert!(!reply.contains("cdlt"));
-    assert!(!reply.contains("book.sensa.io"));
+    assert!(!reply.contains("book.example.com"));
 }
 
 #[test]
 fn parse_signature_detects_contact_card_with_blank_gap_no_signoff() {
-    let text = "Merci pour votre retour.\n\nNous validons l'etape suivante.\n\n\nThomas GUILLET\nEDGE TECHNOLOGIES SAS\n1480 Avenue D'Armenie\nhttp://www.edgetech.fr/\n+33 1 23 45 67 89";
+    let text = "Merci pour votre retour.\n\nNous validons l'etape suivante.\n\n\nThomas\nEDGE TECHNOLOGIES SAS\n1480 Avenue D'Armenie\nhttp://www.example.com/\n+33 1 23 45 67 89";
     let blocks = segment_email_body(text);
     assert!(blocks.iter().any(|b| b.kind == EmailBlockKind::Signature));
     let reply = reply_text(text, &blocks);
     assert!(reply.contains("Nous validons l'etape suivante."));
     assert!(!reply.contains("EDGE TECHNOLOGIES"));
-    assert!(!reply.contains("edgetech.fr"));
+    assert!(!reply.contains("www.example.com"));
 }
 
 #[test]
@@ -959,16 +959,16 @@ fn parse_signature_does_not_cut_normal_paragraphs_with_blank_lines() {
 
 #[test]
 fn parse_signature_keeps_business_url_in_reply_when_not_tail_card() {
-    let text = "Please review https://book.sensa.io/#/customer/thomas before tomorrow.\nIt is part of the requested troubleshooting steps.\nCan you confirm once done?";
+    let text = "Please review https://book.example.com/#/customer/thomas before tomorrow.\nIt is part of the requested troubleshooting steps.\nCan you confirm once done?";
     let blocks = segment_email_body(text);
     let reply = reply_text(text, &blocks);
     assert!(!blocks.iter().any(|b| b.kind == EmailBlockKind::Signature));
-    assert!(reply.contains("book.sensa.io"));
+    assert!(reply.contains("book.example.com"));
 }
 
 #[test]
 fn parse_signature_detects_bien_cordialement_variant() {
-    let text = "Nous avons applique la correction.\n\nBien cordialement,\nThomas GUILLET\nEDGE TECHNOLOGIES SAS\nhttp://www.edgetech.fr/";
+    let text = "Nous avons applique la correction.\n\nBien cordialement,\nThomas\nEDGE TECHNOLOGIES SAS\nhttp://www.example.com/";
     let blocks = segment_email_body(text);
     assert!(blocks.iter().any(|b| b.kind == EmailBlockKind::Signature));
     let reply = reply_text(text, &blocks);
@@ -977,13 +977,13 @@ fn parse_signature_detects_bien_cordialement_variant() {
 
 #[test]
 fn parse_signature_prefers_explicit_signoff_over_late_contact_tail() {
-    let text = "We confirm device Dev EUI is 1CA8520000004734.\n\nPlease see how to address it.\n\nBest regards,\nZakaria Syed\nI&C Dept-Manager\nAl Barakat Golden General Trading & Contracting Co.\n\n---- older chain ----\nMobile: 94468437\nEmail: s.zakaria@barkaat-golden.com\nwww.barkaat-golden.com";
+    let text = "We confirm device Dev EUI is 1CA8520000004734.\n\nPlease see how to address it.\n\nBest regards,\nZakaria\nI&C Dept-Manager\nAl Barakat Golden General Trading & Contracting Co.\n\n---- older chain ----\nMobile: 94468437\nEmail: s.zakaria@example.com\nwww.example.com";
     let blocks = segment_email_body(text);
     assert!(blocks.iter().any(|b| b.kind == EmailBlockKind::Signature));
     let reply = reply_text(text, &blocks);
     assert!(reply.contains("Please see how to address it."));
     assert!(!reply.contains("Best regards"));
-    assert!(!reply.contains("barkaat-golden.com"));
+    assert!(!reply.contains("www.example.com"));
 }
 
 #[test]
@@ -1163,7 +1163,7 @@ fn parse_event_hints_ignores_flash_sale_with_time_window_as_reservation() {
 fn parse_event_hints_detects_restaurant_reservation_with_subtype() {
     let msg = concat!(
         "From: Paris Cafe <rez@example.com>\n",
-        "To: Aurel <aurel@example.com>\n",
+        "To: Owner <aurel@example.com>\n",
         "Subject: Confirmation Of Your New Reservation At Paris Cafe - Mr. Aurel .\n",
         "Content-Type: text/plain; charset=utf-8\n",
         "\n",
@@ -1254,7 +1254,7 @@ fn signature_does_not_extract_when_only_long_prose_tail() {
 
 #[test]
 fn signature_does_not_swallow_reply_prose_before_contact_markers() {
-    let text = "The gateway sends valid payloads and we confirmed this in production.\n\nPlease keep this explanatory sentence in reply text because it is not signature data.\n\nBest regards,\nThomas GUILLET\nEDGE TECHNOLOGIES SAS\nthomas.guillet@edgetech.fr";
+    let text = "The gateway sends valid payloads and we confirmed this in production.\n\nPlease keep this explanatory sentence in reply text because it is not signature data.\n\nBest regards,\nThomas\nEDGE TECHNOLOGIES SAS\nthomas@example.com";
     let blocks = segment_email_body(text);
     let reply = reply_text(text, &blocks);
     assert!(reply.contains("explanatory sentence"));
@@ -1314,7 +1314,7 @@ fn signature_keeps_plain_sentence_before_best_regards_in_reply() {
 fn parse_mail_kind_hints_detects_newsletter_headers() {
     let msg = concat!(
         "From: Reddit <noreply@redditmail.com>\n",
-        "To: Aurel <fitchefaurel@gmail.com>\n",
+        "To: Owner <owner@example.com>\n",
         "Subject: Weekly recap and recommendations\n",
         "List-Unsubscribe: <https://reddit.com/unsubscribe>\n",
         "List-Id: <news.reddit.com>\n",
@@ -1435,7 +1435,7 @@ fn parse_mail_kind_hints_detects_multilingual_shipping_transactional() {
 #[test]
 fn parse_direction_hint_detects_outbound_with_owner_email() {
     let msg = concat!(
-        "From: Aurel <fitchefaurel@gmail.com>\n",
+        "From: Owner <owner@example.com>\n",
         "To: Team <team@example.com>\n",
         "Subject: Follow up\n",
         "Content-Type: text/plain; charset=utf-8\n",
@@ -1445,9 +1445,9 @@ fn parse_direction_hint_detects_outbound_with_owner_email() {
     let parsed = parse_rfc822_with_options(
         msg.as_bytes(),
         &ParseRfc822Options {
-            owner_emails: vec!["fitchefaurel@gmail.com".to_string()],
+            owner_emails: vec!["owner@example.com".to_string()],
             lifecycle_lexicon: None,
-        },
+            keep_body_html: false,        },
     )
     .expect("parse");
     let direction = parsed.direction_hint.expect("direction");
@@ -1458,7 +1458,7 @@ fn parse_direction_hint_detects_outbound_with_owner_email() {
 fn parse_direction_hint_detects_inbound_with_owner_email() {
     let msg = concat!(
         "From: Sender <sender@example.com>\n",
-        "To: Aurel <fitchefaurel@gmail.com>\n",
+        "To: Owner <owner@example.com>\n",
         "Subject: Re: Follow up\n",
         "Content-Type: text/plain; charset=utf-8\n",
         "\n",
@@ -1467,9 +1467,9 @@ fn parse_direction_hint_detects_inbound_with_owner_email() {
     let parsed = parse_rfc822_with_options(
         msg.as_bytes(),
         &ParseRfc822Options {
-            owner_emails: vec!["fitchefaurel@gmail.com".to_string()],
+            owner_emails: vec!["owner@example.com".to_string()],
             lifecycle_lexicon: None,
-        },
+            keep_body_html: false,        },
     )
     .expect("parse");
     let direction = parsed.direction_hint.expect("direction");
@@ -1547,15 +1547,15 @@ fn parse_service_lifecycle_hint_detects_subscription_cancellation() {
         "Content-Type: text/plain; charset=utf-8\n",
         "\n",
         "We're sending you an email to let you know that the following subscription has been canceled.\n",
-        "Customer name: Julia Samokhvalova\n",
-        "Customer email: julia.samx@gmail.com\n",
+        "Customer name: Customer Name\n",
+        "Customer email: customer@example.com\n",
         "Offer: 6 month Flow with Mira Membership\n",
     );
     let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
     assert_eq!(parsed.service_lifecycle_hints.len(), 1);
     let hint = &parsed.service_lifecycle_hints[0];
     assert_eq!(hint.kind, ServiceLifecycleKind::SubscriptionCanceled);
-    assert_eq!(hint.customer_email.as_deref(), Some("julia.samx@gmail.com"));
+    assert_eq!(hint.customer_email.as_deref(), Some("customer@example.com"));
     assert!(
         hint.plan_name
             .as_deref()
@@ -1567,13 +1567,13 @@ fn parse_service_lifecycle_hint_detects_subscription_cancellation() {
 fn parse_cleanup_strips_reddit_digest_footer_tail() {
     let msg = concat!(
         "From: Reddit <noreply@redditmail.com>\n",
-        "To: Aurel <fitchefaurel@gmail.com>\n",
+        "To: Owner <owner@example.com>\n",
         "Subject: digest\n",
         "Content-Type: text/plain; charset=utf-8\n",
         "\n",
         "Here are your posts.\n",
         "Read More\n",
-        "This email was intended for u/fitchefaurel.\n",
+        "This email was intended for u/owner.\n",
         "Unsubscribefrom daily digest messages, or visit your settings to manage\n",
     );
     let parsed = parse_rfc822(msg.as_bytes()).expect("parse");
@@ -1740,7 +1740,7 @@ billing_action_rules:
         &ParseRfc822Options {
             owner_emails: vec![],
             lifecycle_lexicon: Some(Arc::new(lexicon)),
-        },
+            keep_body_html: false,        },
     )
     .expect("parse");
     assert_eq!(parsed.service_lifecycle_hints.len(), 1);
@@ -1794,7 +1794,7 @@ event_deadline_patterns:
         &ParseRfc822Options {
             owner_emails: vec![],
             lifecycle_lexicon: Some(Arc::new(lexicon)),
-        },
+            keep_body_html: false,        },
     )
     .expect("parse");
     assert_eq!(parsed.event_hints.len(), 1);
@@ -1843,7 +1843,7 @@ billing_action_rules:
         &ParseRfc822Options {
             owner_emails: vec![],
             lifecycle_lexicon: Some(Arc::new(lexicon)),
-        },
+            keep_body_html: false,        },
     )
     .expect("parse");
     assert_eq!(parsed.event_hints.len(), 1);

@@ -19,6 +19,12 @@ pub struct CanonicalMessage {
     pub message_key: String,
     pub uid: Option<u32>,
     pub internal_date: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub flags: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub x_gm_thrid: Option<u64>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub x_gm_labels: Vec<String>,
 
     pub message_id: Option<String>,
     pub in_reply_to: Option<String>,
@@ -123,13 +129,24 @@ pub fn canonicalize_threads(threads: &[ParsedThread]) -> Vec<CanonicalThread> {
 
 fn canonicalize_thread_message(m: &ParsedThreadMessage) -> CanonicalMessage {
     let email = &m.email;
-    canonicalize_email_message(m.message_key.clone(), m.uid, m.internal_date.clone(), email)
+    canonicalize_email_message(
+        m.message_key.clone(),
+        m.uid,
+        m.internal_date.clone(),
+        m.flags.clone(),
+        m.x_gm_thrid,
+        m.x_gm_labels.clone(),
+        email,
+    )
 }
 
 fn canonicalize_email_message(
     message_key: String,
     uid: Option<u32>,
     internal_date: Option<String>,
+    flags: Vec<String>,
+    x_gm_thrid: Option<u64>,
+    x_gm_labels: Vec<String>,
     email: &ParsedEmail,
 ) -> CanonicalMessage {
     let blocks = segment_email_body(&email.body_canonical);
@@ -238,6 +255,9 @@ fn canonicalize_email_message(
         message_key,
         uid,
         internal_date,
+        flags,
+        x_gm_thrid,
+        x_gm_labels,
 
         message_id,
         in_reply_to,

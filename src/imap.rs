@@ -19,6 +19,10 @@ pub struct ImapSyncOptions {
     /// Note: `UNSEEN` is mutable and does not have stable incremental semantics by itself.
     /// Callers should treat this as a selection mode rather than a checkpointed sync.
     pub unseen_only: bool,
+
+    /// If true, retain the full RFC822 raw bytes in each `SyncedEmail.raw`.
+    /// Default: false — raw bytes are discarded after parsing to save memory.
+    pub keep_raw: bool,
 }
 
 pub trait ImapStateBackend {
@@ -116,6 +120,9 @@ pub struct SyncedEmail {
 #[derive(Clone, Debug, Default)]
 pub struct ImapScanOptions {
     pub max_messages: Option<usize>,
+    /// If true, retain the full RFC822 raw bytes in each `SyncedEmail.raw`.
+    /// Default: false — raw bytes are discarded after parsing to save memory.
+    pub keep_raw: bool,
 }
 
 pub fn scan_imap_headers(
@@ -361,7 +368,7 @@ fn sync_imap_delta_inner(
                     modseq,
                     rfc822_size,
                     parsed,
-                    raw,
+                    raw: if options.keep_raw { raw } else { Vec::new() },
                 })?;
             }
         }
@@ -454,7 +461,7 @@ fn sync_imap_delta_inner(
                 modseq,
                 rfc822_size,
                 parsed,
-                raw,
+                raw: if options.keep_raw { raw } else { Vec::new() },
             })?;
             state.last_uid = state.last_uid.max(uid);
         }
@@ -505,7 +512,7 @@ fn sync_imap_delta_inner(
                 modseq,
                 rfc822_size,
                 parsed,
-                raw,
+                raw: if options.keep_raw { raw } else { Vec::new() },
             })?;
             state.last_uid = state.last_uid.max(uid);
         }

@@ -32,6 +32,9 @@ pub struct MboxParseOptions {
     pub fail_fast: bool,
     pub owner_emails: Vec<String>,
     pub lifecycle_lexicon: Option<Arc<LifecycleLexicon>>,
+    /// If true, retain the full RFC822 raw bytes in each `MailMessage.raw`.
+    /// Default: false — raw bytes are discarded after parsing to save memory.
+    pub keep_raw: bool,
 }
 
 impl Default for MboxParseOptions {
@@ -42,6 +45,7 @@ impl Default for MboxParseOptions {
             fail_fast: false,
             owner_emails: Vec::new(),
             lifecycle_lexicon: None,
+            keep_raw: false,
         }
     }
 }
@@ -96,6 +100,7 @@ pub fn parse_mbox_file(path: &Path, options: MboxParseOptions) -> Result<MboxPar
                 &ParseRfc822Options {
                     owner_emails: options.owner_emails.clone(),
                     lifecycle_lexicon: options.lifecycle_lexicon.clone(),
+                    keep_body_html: false,
                 },
             ) {
                 Ok(parsed) => {
@@ -105,7 +110,7 @@ pub fn parse_mbox_file(path: &Path, options: MboxParseOptions) -> Result<MboxPar
                         internal_date,
                         flags: Vec::new(),
                         parsed,
-                        raw: msg.raw,
+                        raw: if options.keep_raw { msg.raw } else { Vec::new() },
                     });
                 }
                 Err(err) => {

@@ -20,3 +20,7 @@ Thumbs.db
 tmp/
 mailbox-GLiNER.md
 roadmap.md
+
+.bug-hunter/
+examples/
+tests/

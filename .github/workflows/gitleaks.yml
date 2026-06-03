@@ -1,0 +1,43 @@
+# ────────────────────────────────────────────────
+# Gitleaks - Secret & PII Scan
+# Runs locally via: npx @redwoodjs/agent-ci run --workflow .github/workflows/gitleaks.yml
+# Runs in GitHub Actions CI on push/PR to master
+# Uses the same .gitleaks.toml custom PII config
+# ────────────────────────────────────────────────
+
+name: Gitleaks - Secret & PII Scan
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+env:
+  GITLEAKS_IMAGE: zricethezav/gitleaks:latest
+
+jobs:
+  scan:
+    name: Secret & PII Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pull gitleaks image
+        run: docker pull ${{ env.GITLEAKS_IMAGE }}
+
+      - name: Scan current files for secrets & PII
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/repo" \
+            "${{ env.GITLEAKS_IMAGE }}" \
+            detect --source /repo --config /repo/.gitleaks.toml --no-git --verbose
+
+      - name: Scan git history for historical leaks
+        if: github.event_name == 'push'
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/repo" \
+            "${{ env.GITLEAKS_IMAGE }}" \
+            git /repo --config /repo/.gitleaks.toml --verbose

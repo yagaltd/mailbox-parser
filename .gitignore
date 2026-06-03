@@ -24,3 +24,6 @@ roadmap.md
 .bug-hunter/
 examples/
 tests/
+
+# Gitleaks
+.gitleaks-report.json

@@ -4448,7 +4448,7 @@ mod tests {
 
     #[test]
     fn canonical_includes_sender_and_participant_domain_hints() {
-        let raw = b"From: Alice <alice@gmail.com>\r\nTo: Bob <bob@company.com>\r\nCc: Carol <carol@yahoo.com>\r\nSubject: Domain hints\r\nDate: Tue, 11 Feb 2025 10:00:00 +0000\r\nMessage-ID: <hints@example.com>\r\n\r\nHello\r\n";
+        let raw = b"From: Alice <alice@example.com>\r\nTo: Bob <bob@example.com>\r\nCc: Carol <carol@example.com>\r\nSubject: Domain hints\r\nDate: Tue, 11 Feb 2025 10:00:00 +0000\r\nMessage-ID: <hints@example.com>\r\n\r\nHello\r\n";
         let parsed = parse_rfc822(raw).expect("parse");
         let threads = thread_messages_from_mail_messages(&[MailMessage {
             uid: None,

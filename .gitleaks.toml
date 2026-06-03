@@ -23,13 +23,19 @@ tags = ["pii", "email"]
 
 [rules.allowlist]
 regexes = [
-    '@example\.(com|org|net|io)',
-    '@test\.(com|org|net|io)',
+    # Allow all @example.* (reserved by RFC 2609/6761)
+    '@example\.',
+    # Allow subdomains of example.com (user@sub.example.com)
+    '\.example\.com',
+    # Allow .example TLD (reserved for testing)
+    '\.example\b',
+    '@test\.',
     '@localhost',
     '@local',
     '@invalid',
-    '@newsletter\.example\.com',
     '[a-z]+@[a-z]+\.invalid',
+    'EXAMPLE\.COM',
+    'MID-1@',
 ]
 paths = [
     "tests/fixtures/",

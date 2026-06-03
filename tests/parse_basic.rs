@@ -1313,7 +1313,7 @@ fn signature_keeps_plain_sentence_before_best_regards_in_reply() {
 #[test]
 fn parse_mail_kind_hints_detects_newsletter_headers() {
     let msg = concat!(
-        "From: Reddit <noreply@redditmail.com>\n",
+        "From: Reddit <noreply@social.example.com>\n",
         "To: Owner <owner@example.com>\n",
         "Subject: Weekly recap and recommendations\n",
         "List-Unsubscribe: <https://reddit.com/unsubscribe>\n",
@@ -1356,7 +1356,7 @@ fn parse_mail_kind_hints_detects_promotion_tokens() {
 #[test]
 fn parse_mail_kind_hints_prefers_newsletter_on_sender_domain_and_footer_tokens() {
     let msg = concat!(
-        "From: Reddit <noreply@redditmail.com>\n",
+        "From: Reddit <noreply@social.example.com>\n",
         "To: User <user@example.com>\n",
         "Subject: Community update\n",
         "Content-Type: text/plain; charset=utf-8\n",
@@ -1541,7 +1541,7 @@ fn parse_unsubscribe_hints_from_list_headers_and_body() {
 #[test]
 fn parse_service_lifecycle_hint_detects_subscription_cancellation() {
     let msg = concat!(
-        "From: Kajabi <notifications@kajabi.com>\n",
+        "From: Kajabi <notifications@platform.example.com>\n",
         "To: Owner <owner@example.com>\n",
         "Subject: [NOTIFICATION] Subscription cancellation\n",
         "Content-Type: text/plain; charset=utf-8\n",
@@ -1566,7 +1566,7 @@ fn parse_service_lifecycle_hint_detects_subscription_cancellation() {
 #[test]
 fn parse_cleanup_strips_reddit_digest_footer_tail() {
     let msg = concat!(
-        "From: Reddit <noreply@redditmail.com>\n",
+        "From: Reddit <noreply@social.example.com>\n",
         "To: Owner <owner@example.com>\n",
         "Subject: digest\n",
         "Content-Type: text/plain; charset=utf-8\n",
@@ -1644,7 +1644,7 @@ fn parse_billing_action_hints_respects_token_boundaries() {
 #[test]
 fn parse_service_lifecycle_hint_classifies_order_confirmation_not_billing_notice() {
     let msg = concat!(
-        "From: Eventbrite <noreply@eventbrite.com>\n",
+        "From: Eventbrite <noreply@events.example.com>\n",
         "To: User <user@example.com>\n",
         "Subject: Order Confirmation - AI Summit 2026\n",
         "Content-Type: text/plain; charset=utf-8\n",
@@ -1728,7 +1728,7 @@ billing_action_rules:
 "#;
     let lexicon = LifecycleLexicon::from_yaml_str(custom_yaml).expect("valid custom lexicon");
     let msg = concat!(
-        "From: Stripe <billing@stripe.com>\n",
+        "From: Stripe <billing@payment.example.com>\n",
         "To: User <user@example.com>\n",
         "Subject: Account update\n",
         "Content-Type: text/plain; charset=utf-8\n",
@@ -1856,7 +1856,7 @@ billing_action_rules:
 #[test]
 fn parse_signature_fallback_extracts_footer_tail_when_marker_dense() {
     let msg = concat!(
-        "From: Vercel <no-reply@vercel.com>\n",
+        "From: Vercel <no-reply@deploy.example.com>\n",
         "To: User <user@example.com>\n",
         "Subject: Account action\n",
         "Content-Type: text/plain; charset=utf-8\n",

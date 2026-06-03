@@ -15,7 +15,7 @@ Entity IDs are deterministic and SHA-256-based (`email:<hex>`).
 ```rust
 use contacts::{EmailAddress, entity_id_for_email};
 
-let addr = EmailAddress::parse("Alice <Alice.Example@Example.com>").unwrap();
+let addr = EmailAddress::parse("Alice <alice.example@example.com>").unwrap();
 assert_eq!(addr.address, "alice.example@example.com");
 
 let entity = entity_id_for_email(&addr.address).unwrap();

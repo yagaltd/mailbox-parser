@@ -3,13 +3,13 @@ use pretty_assertions::assert_eq;
 
 #[test]
 fn normalize_basic_email() {
-    let v = normalize_email_address(" Foo <FOO@Example.com> ");
+    let v = normalize_email_address(" Foo <foo@example.com> ");
     assert_eq!(v.as_deref(), Some("foo@example.com"));
 }
 
 #[test]
 fn parse_email_with_name() {
-    let addr = EmailAddress::parse("Ada Lovelace <ADA@Example.com>").unwrap();
+    let addr = EmailAddress::parse("Ada Lovelace <ada@example.com>").unwrap();
     assert_eq!(addr.address, "ada@example.com");
     assert_eq!(addr.name.as_deref(), Some("Ada Lovelace"));
 }

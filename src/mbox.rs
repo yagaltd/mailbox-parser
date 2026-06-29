@@ -35,6 +35,12 @@ pub struct MboxParseOptions {
     /// If true, retain the full RFC822 raw bytes in each `MailMessage.raw`.
     /// Default: false — raw bytes are discarded after parsing to save memory.
     pub keep_raw: bool,
+    /// If true, retain the original `body_html` on each `ParsedEmail`.
+    /// Default: false — HTML is dropped after computing `body_canonical` to
+    /// keep the canonical output token-lean for LLM ingestion. Set to true
+    /// when downstream code needs the original HTML for rendering (e.g. a UI
+    /// that renders message bodies with links and inline images).
+    pub keep_body_html: bool,
 }
 
 impl Default for MboxParseOptions {
@@ -46,6 +52,7 @@ impl Default for MboxParseOptions {
             owner_emails: Vec::new(),
             lifecycle_lexicon: None,
             keep_raw: false,
+            keep_body_html: false,
         }
     }
 }
@@ -100,7 +107,7 @@ pub fn parse_mbox_file(path: &Path, options: MboxParseOptions) -> Result<MboxPar
                 &ParseRfc822Options {
                     owner_emails: options.owner_emails.clone(),
                     lifecycle_lexicon: options.lifecycle_lexicon.clone(),
-                    keep_body_html: false,
+                    keep_body_html: options.keep_body_html,
                 },
             ) {
                 Ok(parsed) => {

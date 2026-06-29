@@ -140,6 +140,10 @@ enum ImapCommand {
         #[arg(long)]
         attachments_dir: Option<PathBuf>,
 
+        /// Directory to write per-message HTML bodies to (`{message_key}.html`).
+        #[arg(long)]
+        bodies_dir: Option<PathBuf>,
+
         #[arg(long, value_enum, default_value_t = SplitBy::None)]
         split_by: SplitBy,
 
@@ -209,6 +213,13 @@ enum MboxCommand {
         /// `./attachments` next to the output file/dir.
         #[arg(long)]
         attachments_dir: Option<PathBuf>,
+
+        /// Directory to write per-message HTML bodies to (`{message_key}.html`).
+        /// The canonical JSON stays text-only (LLM-friendly); these are separate
+        /// render assets fetched on demand by a UI. Implies retaining body_html
+        /// during parsing.
+        #[arg(long)]
+        bodies_dir: Option<PathBuf>,
 
         /// Mailbox owner email(s) used to infer message direction (inbound/outbound/self).
         #[arg(long = "owner-email")]
@@ -292,6 +303,10 @@ enum DirCommand {
         #[arg(long)]
         attachments_dir: Option<PathBuf>,
 
+        /// Directory to write per-message HTML bodies to (`{message_key}.html`).
+        #[arg(long)]
+        bodies_dir: Option<PathBuf>,
+
         /// Mailbox owner email(s) used to infer message direction (inbound/outbound/self).
         #[arg(long = "owner-email")]
         owner_emails: Vec<String>,
@@ -349,6 +364,7 @@ fn run_imap(args: ImapArgs) -> Result<()> {
             pretty,
             attachments,
             attachments_dir,
+            bodies_dir,
             split_by,
             format,
             html_default_view,
@@ -365,6 +381,7 @@ fn run_imap(args: ImapArgs) -> Result<()> {
             pretty,
             attachments,
             attachments_dir.as_deref(),
+            bodies_dir.as_deref(),
             split_by,
             format,
             HtmlUiConfig {
@@ -391,6 +408,7 @@ fn run_mbox(args: MboxArgs) -> Result<()> {
             pretty,
             attachments,
             attachments_dir,
+            bodies_dir,
             owner_emails,
             lifecycle_lexicon,
             lifecycle_override_jsonl,
@@ -412,6 +430,7 @@ fn run_mbox(args: MboxArgs) -> Result<()> {
             pretty,
             attachments,
             attachments_dir.as_deref(),
+            bodies_dir.as_deref(),
             &owner_emails,
             lifecycle_lexicon.as_deref(),
             lifecycle_override_jsonl.as_deref(),
@@ -437,6 +456,7 @@ fn run_imap_sync(
     pretty: bool,
     attachments: bool,
     attachments_dir: Option<&Path>,
+    bodies_dir: Option<&Path>,
     split_by: SplitBy,
     format: OutputFormat,
     html_ui: HtmlUiConfig,
@@ -482,6 +502,7 @@ fn run_imap_sync(
         pretty,
         attachments,
         attachments_dir,
+        bodies_dir,
         split_by,
         format,
         html_ui,
@@ -529,6 +550,7 @@ fn run_mbox_threads(
     pretty: bool,
     attachments: bool,
     attachments_dir: Option<&Path>,
+    bodies_dir: Option<&Path>,
     owner_emails: &[String],
     lifecycle_lexicon_path: Option<&Path>,
     lifecycle_override_jsonl_path: Option<&Path>,
@@ -547,6 +569,7 @@ fn run_mbox_threads(
             owner_emails: owner_emails.to_vec(),
             lifecycle_lexicon: lifecycle_lexicon.clone(),
             keep_raw: false,
+            keep_body_html: bodies_dir.is_some(),
         },
     )
     .with_context(|| format!("parse mbox {}", path.display()))?;
@@ -589,6 +612,7 @@ fn run_mbox_threads(
         pretty,
         attachments,
         attachments_dir,
+        bodies_dir,
         split_by,
         format,
         html_ui,
@@ -607,6 +631,7 @@ fn run_dir(args: DirArgs) -> Result<()> {
             pretty,
             attachments,
             attachments_dir,
+            bodies_dir,
             owner_emails,
             lifecycle_lexicon,
             lifecycle_override_jsonl,
@@ -626,6 +651,7 @@ fn run_dir(args: DirArgs) -> Result<()> {
             pretty,
             attachments,
             attachments_dir.as_deref(),
+            bodies_dir.as_deref(),
             &owner_emails,
             lifecycle_lexicon.as_deref(),
             lifecycle_override_jsonl.as_deref(),
@@ -651,6 +677,7 @@ fn run_dir_threads(
     pretty: bool,
     attachments: bool,
     attachments_dir: Option<&Path>,
+    bodies_dir: Option<&Path>,
     owner_emails: &[String],
     lifecycle_lexicon_path: Option<&Path>,
     lifecycle_override_jsonl_path: Option<&Path>,
@@ -705,7 +732,7 @@ fn run_dir_threads(
                     &ParseRfc822Options {
                         owner_emails: owner_emails.to_vec(),
                         lifecycle_lexicon: lifecycle_lexicon.clone(),
-                        keep_body_html: false,
+                        keep_body_html: bodies_dir.is_some(),
                     },
                 ) {
                     Ok(parsed) => {
@@ -736,6 +763,7 @@ fn run_dir_threads(
                     owner_emails: owner_emails.to_vec(),
                     lifecycle_lexicon: lifecycle_lexicon.clone(),
                     keep_raw: false,
+                    keep_body_html: bodies_dir.is_some(),
                 },
             );
 
@@ -813,6 +841,7 @@ fn run_dir_threads(
         pretty,
         attachments,
         attachments_dir,
+        bodies_dir,
         split_by,
         format,
         html_ui,
@@ -1093,6 +1122,7 @@ fn write_threads_output(
     pretty: bool,
     attachments: bool,
     attachments_dir: Option<&Path>,
+    bodies_dir: Option<&Path>,
     split_by: SplitBy,
     format: OutputFormat,
     html_ui: HtmlUiConfig,
@@ -1121,6 +1151,14 @@ fn write_threads_output(
     } else {
         HashMap::new()
     };
+
+    // Per-message body HTML (for UI rendering). Orthogonal to JSON output:
+    // the canonical JSON stays text-only (LLM-friendly); these are separate
+    // render assets fetched on demand by message_key.
+    if let Some(dir) = bodies_dir {
+        export_bodies(&all_threads, base_dir, dir)
+            .with_context(|| format!("export bodies to {}", dir.display()))?;
+    }
 
     // Canonical threads are used for canonical JSON output *and* as the single input model for
     // markdown rendering (so markdown is a pure view over the canonical schema).
@@ -2082,6 +2120,48 @@ fn export_attachments(
         );
     }
     Ok(out)
+}
+
+/// Write one `bodies/{message_key}.html` file per message that has an HTML body.
+/// These are render assets for the UI (links, inline images) — fetched on
+/// demand by message_key. The canonical JSON stays text-only; the HTML lives
+/// separately so it never bloats the LLM artifact.
+fn export_bodies(threads: &[JsonThreadOut], _base_dir: &Path, bodies_dir: &Path) -> Result<()> {
+    fs::create_dir_all(bodies_dir)
+        .with_context(|| format!("create bodies dir {}", bodies_dir.display()))?;
+    let mut wrote = 0usize;
+    let mut skipped = 0usize;
+    for t in threads {
+        for m in &t.thread.messages {
+            let key = m.message_key.trim();
+            if key.is_empty() {
+                skipped += 1;
+                continue;
+            }
+            let Some(html) = m.email.body_html.as_deref() else {
+                skipped += 1;
+                continue;
+            };
+            if html.trim().is_empty() {
+                skipped += 1;
+                continue;
+            }
+            let path = bodies_dir.join(format!("{key}.html"));
+            fs::write(&path, html)
+                .with_context(|| format!("write body {}", path.display()))?;
+            wrote += 1;
+            if wrote.is_multiple_of(500) {
+                eprintln!("bodies_written={wrote}");
+            }
+        }
+    }
+    eprintln!(
+        "bodies_written_total={} skipped={} dir={}",
+        wrote,
+        skipped,
+        bodies_dir.display()
+    );
+    Ok(())
 }
 
 fn inject_canonical_attachment_paths(

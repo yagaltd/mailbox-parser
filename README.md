@@ -294,6 +294,33 @@ println!("threads={}", threads.len());
 # Ok::<(), anyhow::Error>(())
 ```
 
+#### Retaining the original HTML (`keep_body_html`)
+
+By default the mbox parser drops `body_html` after computing `body_canonical` (the
+LLM-friendly text decomposition). Set `keep_body_html: true` when a downstream
+renderer (e.g. a UI) needs the original HTML — links, inline images, styling:
+
+```rust
+let mail = parse_mbox_file(
+    Path::new("mailbox.mbox"),
+    MboxParseOptions { keep_body_html: true, ..Default::default() },
+)?;
+// each mail.messages[i].parsed.body_html is now Some(String)
+```
+
+This keeps the **canonical/render split**: canonical JSON stays text-only and
+token-lean for LLM ingestion, while the original HTML lives separately for UIs.
+
+The CLI exposes this as `--bodies-dir <dir>` (on `mbox`/`imap`/`dir threads`),
+which keeps `body_html` and writes one `bodies/{message_key}.html` per message —
+render assets fetched on demand by a UI, with no change to the canonical schema:
+
+```bash
+mailbox-parser-cli mbox threads \
+  --path inbox.mbox --out data.json --json-profile canonical \
+  --bodies-dir ./bodies --owner-email you@example.com
+```
+
 ### IMAP sync (incremental)
 
 The IMAP sync returns parsed emails plus some IMAP metadata:

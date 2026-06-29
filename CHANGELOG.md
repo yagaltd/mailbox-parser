@@ -6,6 +6,8 @@
 - **PST (.pst) parsing** — `parse_pst_messages()` walks Outlook `.pst` archive folder hierarchies and yields `PstMessage { parsed, rfc822, folder }` per message. Uses the `outlook-pst` crate (Microsoft-authored, MIT licensed).
 - `ParsedAttachment._bytes` field (`Option<Vec<u8>>`, `#[serde(skip)]`) for formats that can provide in-memory attachment data (MSG).
 - PST folder name preserved in `PstMessage.folder` for mailbox tagging.
+- **`keep_body_html` option** on `MboxParseOptions` (default false). When true, the original message HTML is retained on `ParsedEmail.body_html` instead of being dropped after computing `body_canonical`. Keeps the canonical output token-lean for LLM ingestion while letting downstream renderers (UIs) access the original HTML with links and inline images.
+- **CLI `--bodies-dir <dir>`** (mbox/imap/dir `threads`). Writes one `bodies/{message_key}.html` per message that has an HTML body — separate render assets fetched on demand, so the canonical JSON stays text-only. Realises the canonical/render split: LLM gets compact text; UI gets original HTML.
 
 ### Known limitations
 

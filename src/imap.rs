@@ -5,8 +5,8 @@ use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    MailboxScanError, MailboxScanMessage, MailboxScanReport, ParsedEmail, parse_rfc822,
-    parse_rfc822_headers,
+    MailboxScanError, MailboxScanMessage, MailboxScanReport, ParseRfc822Options, ParsedEmail,
+    parse_rfc822_headers, parse_rfc822_with_options,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -23,6 +23,14 @@ pub struct ImapSyncOptions {
     /// If true, retain the full RFC822 raw bytes in each `SyncedEmail.raw`.
     /// Default: false — raw bytes are discarded after parsing to save memory.
     pub keep_raw: bool,
+
+    /// If true, retain the original `body_html` on each parsed `ParsedEmail`
+    /// (otherwise dropped after computing `body_canonical`).
+    pub keep_body_html: bool,
+
+    /// If true, retain raw attachment bytes in `ParsedAttachment._bytes`
+    /// (decoded from the MIME body) for downstream file extraction.
+    pub keep_attachment_bytes: bool,
 }
 
 pub trait ImapStateBackend {
@@ -348,7 +356,7 @@ fn sync_imap_delta_inner(
                 if raw.is_empty() {
                     continue;
                 }
-                let parsed = parse_rfc822(&raw).context("parse rfc822")?;
+                let parsed = parse_rfc822_with_options(&raw, &ParseRfc822Options { owner_emails: Vec::new(), lifecycle_lexicon: None, keep_body_html: options.keep_body_html, keep_attachment_bytes: options.keep_attachment_bytes }).context("parse rfc822")?;
                 let flags = fetch
                     .flags()
                     .iter()
@@ -437,7 +445,7 @@ fn sync_imap_delta_inner(
             if raw.is_empty() {
                 continue;
             }
-            let parsed = parse_rfc822(&raw).context("parse rfc822")?;
+            let parsed = parse_rfc822_with_options(&raw, &ParseRfc822Options { owner_emails: Vec::new(), lifecycle_lexicon: None, keep_body_html: options.keep_body_html, keep_attachment_bytes: options.keep_attachment_bytes }).context("parse rfc822")?;
             let flags = fetch
                 .flags()
                 .iter()
@@ -493,7 +501,7 @@ fn sync_imap_delta_inner(
             if raw.is_empty() {
                 continue;
             }
-            let parsed = parse_rfc822(&raw).context("parse rfc822")?;
+            let parsed = parse_rfc822_with_options(&raw, &ParseRfc822Options { owner_emails: Vec::new(), lifecycle_lexicon: None, keep_body_html: options.keep_body_html, keep_attachment_bytes: options.keep_attachment_bytes }).context("parse rfc822")?;
             let flags = fetch
                 .flags()
                 .iter()

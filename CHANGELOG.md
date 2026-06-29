@@ -1,3 +1,15 @@
+## 0.4.1 - 2026-06-29
+
+### Added
+
+- **IMAP sync now supports `keep_body_html` + `keep_attachment_bytes`** via `ImapSyncOptions`. The sync path parses with `parse_rfc822_with_options` (was `parse_rfc822` with no options), so the IMAP source gains the same body-HTML and attachment-byte retention as mbox/dir/MSG. The CLI's `imap sync` `--bodies-dir` and `--attachments-dir` flags now take effect for IMAP too. The whole feature set is now **uniform across all sources** (mbox, IMAP, dir, MSG).
+
+### Limitations
+
+- PST attachment bytes remain unavailable (outlook-pst crate limitation).
+
+---
+
 ## 0.4.0 - 2026-06-29
 
 ### Added

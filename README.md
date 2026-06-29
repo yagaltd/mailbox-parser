@@ -392,6 +392,13 @@ println!(
 # Ok::<(), anyhow::Error>(())
 ```
 
+`ImapSyncOptions` carries `keep_raw`, `keep_body_html`, and
+`keep_attachment_bytes` — the same flags as `MboxParseOptions`. Set them to
+retain the original HTML and/or attachment bytes for downstream rendering /
+file extraction (the CLI's `imap sync` `--bodies-dir` / `--attachments-dir`
+flags flip them automatically). The IMAP path now has feature parity with
+mbox/dir/MSG.
+
 ### IMAP metadata + streaming tests
 
 Offline unit tests (default `cargo test`) cover:

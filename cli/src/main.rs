@@ -491,6 +491,8 @@ fn run_imap_sync(
             account_id,
             mailboxes,
             &mut backend,
+            bodies_dir.is_some(),
+            attachments_dir.is_some(),
         )?);
     }
     write_threads_output(
@@ -1059,6 +1061,8 @@ fn collect_threads_for_account_group(
     account_id: &str,
     mailboxes: &[ImapAccountConfig],
     backend: &mut dyn ImapStateBackend,
+    keep_body_html: bool,
+    keep_attachment_bytes: bool,
 ) -> Result<Vec<JsonThreadOut>> {
     let mut all_messages: Vec<SyncedEmail> = Vec::new();
     let mut mbs: Vec<String> = Vec::new();
@@ -1076,6 +1080,8 @@ fn collect_threads_for_account_group(
                 force_full: full,
                 unseen_only: false,
                 keep_raw: false,
+                keep_body_html,
+                keep_attachment_bytes,
             },
         )
         .with_context(|| {

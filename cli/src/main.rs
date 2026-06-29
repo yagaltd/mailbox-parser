@@ -546,6 +546,7 @@ fn run_mbox_threads(
             fail_fast,
             owner_emails: owner_emails.to_vec(),
             lifecycle_lexicon: lifecycle_lexicon.clone(),
+            keep_raw: false,
         },
     )
     .with_context(|| format!("parse mbox {}", path.display()))?;
@@ -704,6 +705,7 @@ fn run_dir_threads(
                     &ParseRfc822Options {
                         owner_emails: owner_emails.to_vec(),
                         lifecycle_lexicon: lifecycle_lexicon.clone(),
+                        keep_body_html: false,
                     },
                 ) {
                     Ok(parsed) => {
@@ -733,6 +735,7 @@ fn run_dir_threads(
                     fail_fast: false,
                     owner_emails: owner_emails.to_vec(),
                     lifecycle_lexicon: lifecycle_lexicon.clone(),
+                    keep_raw: false,
                 },
             );
 
@@ -1040,6 +1043,7 @@ fn collect_threads_for_account_group(
             ImapSyncOptions {
                 force_full: full,
                 unseen_only: false,
+                keep_raw: false,
             },
         )
         .with_context(|| {
@@ -2046,7 +2050,7 @@ fn export_attachments(
         for m in &t.thread.messages {
             for a in &m.email.attachments {
                 let sha = a.sha256.trim();
-                if sha.is_empty() || a.bytes.is_empty() {
+                if sha.is_empty() || a._bytes.as_ref().map_or(true, |b| b.is_empty()) {
                     continue;
                 }
                 if out.contains_key(sha) {
@@ -2056,7 +2060,7 @@ fn export_attachments(
                 let file_name = attachment_file_name(a);
                 let path = attachments_dir.join(file_name);
                 if !path.exists() {
-                    fs::write(&path, &a.bytes)
+                    fs::write(&path, a._bytes.as_ref().unwrap())
                         .with_context(|| format!("write attachment {}", path.display()))?;
                     wrote += 1;
                     if wrote.is_multiple_of(100) {

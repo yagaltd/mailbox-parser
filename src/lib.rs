@@ -19,6 +19,18 @@ pub use lifecycle_lexicon::{
     LifecycleLexicon, LifecycleRuleMatch, default_lifecycle_lexicon,
     load_lifecycle_lexicon_from_yaml, load_lifecycle_lexicon_with_overrides,
 };
+#[cfg(feature = "msg-parser")]
+pub mod msg;
+
+#[cfg(feature = "msg-parser")]
+pub use msg::{parse_msg, parse_msg_file, MsgParseError, MsgParseResult};
+
+#[cfg(feature = "pst-parser")]
+pub mod pst;
+
+#[cfg(feature = "pst-parser")]
+pub use pst::{parse_pst_messages, PstMessage, PstParseError};
+
 pub use mbox::{
     MboxMessage, MboxParseError, MboxParseOptions, MboxParseReport, MboxReadOptions,
     iter_mbox_messages, parse_mbox_file, scan_mbox_file_headers_only, scan_mbox_headers,
@@ -127,6 +139,11 @@ pub struct ParsedAttachment {
     pub sha256: String,
     pub content_id: Option<String>,
     pub content_disposition: Option<String>,
+    /// Raw attachment bytes, available when parsed from MSG or PST.
+    /// Empty for RFC 822 / mbox (bytes live in the MIME body on disk).
+    /// Skipped in serialization — not part of the canonical output.
+    #[serde(skip)]
+    pub _bytes: Option<Vec<u8>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1126,7 +1143,7 @@ fn email_from_addr(addr: &mail_parser::Addr<'_>) -> Option<EmailAddress> {
     EmailAddress::new(address, name)
 }
 
-fn build_canonical_body(text: Option<&str>, html: Option<&str>) -> String {
+pub(crate) fn build_canonical_body(text: Option<&str>, html: Option<&str>) -> String {
     let has_html = html.map(|s| !s.trim().is_empty()).unwrap_or(false);
     let mut out = String::new();
     if let Some(t) = text.map(|s| s.trim()).filter(|s| !s.is_empty()) {
@@ -1310,6 +1327,7 @@ fn collect_attachments_and_forwards(
                 sha256,
                 content_id,
                 content_disposition,
+                _bytes: None,
             });
         }
 
@@ -1319,7 +1337,7 @@ fn collect_attachments_and_forwards(
     Ok((attachments, forwarded))
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
+pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     use sha2::Digest;
     let mut h = sha2::Sha256::new();
     h.update(bytes);
@@ -4418,6 +4436,59 @@ fn decode_html_entities(s: &str) -> String {
     out
 }
 
+/// Infer a MIME type from a file extension.
+pub(crate) fn mime_from_extension(ext: &str) -> String {
+    let s = ext.trim_start_matches('.').to_ascii_lowercase();
+    if s == "jpg" || s == "jpeg" { return "image/jpeg".to_string(); }
+    if s == "png" { return "image/png".to_string(); }
+    if s == "gif" { return "image/gif".to_string(); }
+    if s == "bmp" { return "image/bmp".to_string(); }
+    if s == "svg" { return "image/svg+xml".to_string(); }
+    if s == "webp" { return "image/webp".to_string(); }
+    if s == "pdf" { return "application/pdf".to_string(); }
+    if s == "doc" || s == "docx" { return "application/msword".to_string(); }
+    if s == "xls" || s == "xlsx" { return "application/vnd.ms-excel".to_string(); }
+    if s == "ppt" || s == "pptx" { return "application/vnd.ms-powerpoint".to_string(); }
+    if s == "zip" { return "application/zip".to_string(); }
+    if s == "gz" || s == "gzip" { return "application/gzip".to_string(); }
+    if s == "tar" { return "application/x-tar".to_string(); }
+    if s == "txt" { return "text/plain".to_string(); }
+    if s == "html" || s == "htm" { return "text/html".to_string(); }
+    if s == "xml" { return "application/xml".to_string(); }
+    if s == "json" { return "application/json".to_string(); }
+    if s == "msg" { return "application/vnd.ms-outlook".to_string(); }
+    if s == "ics" { return "text/calendar".to_string(); }
+    if s == "csv" { return "text/csv".to_string(); }
+    if s == "mp3" { return "audio/mpeg".to_string(); }
+    if s == "mp4" { return "video/mp4".to_string(); }
+    "application/octet-stream".to_string()
+}
+
+/// Base64-encode bytes (no line wrapping).
+pub(crate) fn base64_encode_bytes(data: &[u8]) -> String {
+    const CHARS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+        out.push(CHARS[((triple >> 18) & 0x3F) as usize] as char);
+        out.push(CHARS[((triple >> 12) & 0x3F) as usize] as char);
+        if chunk.len() > 1 {
+            out.push(CHARS[((triple >> 6) & 0x3F) as usize] as char);
+        } else {
+            out.push('=');
+        }
+        if chunk.len() > 2 {
+            out.push(CHARS[(triple & 0x3F) as usize] as char);
+        } else {
+            out.push('=');
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4448,7 +4519,7 @@ mod tests {
 
     #[test]
     fn canonical_includes_sender_and_participant_domain_hints() {
-        let raw = b"From: Alice <alice@example.com>\r\nTo: Bob <bob@example.com>\r\nCc: Carol <carol@example.com>\r\nSubject: Domain hints\r\nDate: Tue, 11 Feb 2025 10:00:00 +0000\r\nMessage-ID: <hints@example.com>\r\n\r\nHello\r\n";
+        let raw = b"From: Alice <alice@gmail.com>\r\nTo: Bob <bob@acme-corp.com>\r\nCc: Carol <carol@yahoo.com>\r\nSubject: Domain hints\r\nDate: Tue, 11 Feb 2025 10:00:00 +0000\r\nMessage-ID: <hints@example.com>\r\n\r\nHello\r\n";
         let parsed = parse_rfc822(raw).expect("parse");
         let threads = thread_messages_from_mail_messages(&[MailMessage {
             uid: None,
@@ -4471,7 +4542,7 @@ mod tests {
         assert!(
             msg.participant_domain_hints
                 .iter()
-                .any(|h| h.domain == "company.com")
+                .any(|h| h.domain == "acme-corp.com")
         );
         assert!(
             msg.participant_domain_hints

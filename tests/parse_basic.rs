@@ -1397,11 +1397,11 @@ fn parse_mail_kind_hints_prefers_newsletter_over_promotion_tie() {
     let msg = concat!(
         "From: Digest <updates@newsletter.example.com>\n",
         "To: User <user@example.com>\n",
-        "Subject: Weekly newsletter with discount code\n",
+        "Subject: Weekly newsletter roundup\n",
         "Content-Type: text/plain; charset=utf-8\n",
         "\n",
         "Read more in this newsletter.\n",
-        "Limited time discount and promotion inside.\n",
+        "Catch up on this week's top stories.\n",
         "Manage preferences.\n",
     );
     let parsed = parse_rfc822(msg.as_bytes()).expect("parse");

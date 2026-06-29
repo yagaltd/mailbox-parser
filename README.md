@@ -3,6 +3,8 @@
 Rust library for:
 
 - Parsing RFC822 email messages into `ParsedEmail`
+- Parsing Outlook `.msg` files into `ParsedEmail`
+- Parsing Outlook `.pst` archives into `ParsedEmail` (metadata-only attachments)
 - Threading messages into `ParsedThread`
 - Canonicalizing into a stable export/ingest model (`CanonicalThread` / `CanonicalMessage`)
 - Incremental IMAP sync via a pluggable `ImapStateBackend`
@@ -76,8 +78,8 @@ For human-oriented nested conversation JSON (root + reply children), use `mailbo
 
 ### End-to-end flow (high level)
 
-1) `sync_imap_*` or `.mbox` iterator yields raw RFC822 bytes
-2) `parse_rfc822()` → `ParsedEmail`
+1) `sync_imap_*`, `.mbox` iterator, `.msg` file, or `.pst` archive yields `ParsedEmail`
+2) `parse_rfc822()` / `parse_msg()` / `parse_pst_messages()` → `ParsedEmail`
 3) `thread_messages()` → `ParsedThread`
 4) `canonicalize_threads()` → `CanonicalThread`
 
@@ -237,6 +239,47 @@ Chunking behavior in V3 SDK:
 - If no boundary exists in range, fallback is whitespace/hard split.
 - Very short messages under the limit remain a single chunk.
 
+### MSG parsing (Outlook .msg)
+
+For Outlook `.msg` files:
+
+```rust
+use std::path::Path;
+use mailbox_parser::parse_msg;
+
+let email = parse_msg(Path::new("message.msg"))?;
+println!("subject={:?} attachments={}", email.subject, email.attachments.len());
+# Ok::<(), anyhow::Error>(())
+```
+
+`parse_msg()` extracts headers, text/HTML bodies, recipients, and **full attachment
+binary data** (with SHA256). The result is a `ParsedEmail` — the same type that
+`parse_rfc822()` returns — so it feeds directly into threading and canonicalization.
+
+### PST parsing (Outlook .pst)
+
+For Outlook `.pst` archives:
+
+```rust
+use std::path::Path;
+use mailbox_parser::parse_pst_messages;
+
+let messages = parse_pst_messages(Path::new("archive.pst"))?;
+for msg in &messages {
+    println!("folder={:?} subject={:?}", msg.folder, msg.parsed.subject);
+}
+println!("total messages={}", messages.len());
+# Ok::<(), anyhow::Error>(())
+```
+
+`parse_pst_messages()` walks the folder hierarchy and returns `PstMessage` structs,
+each containing a `ParsedEmail`, RFC 822 bytes, and the source folder name.
+
+**Known limitation:** PST attachments have metadata (filename, MIME type, size) but
+no binary data — SHA256 is empty and no attachment MIME parts appear in the RFC 822
+output. This is due to the `outlook-pst` crate's public API hiding the concrete types
+needed for binary extraction. See [Notes / limitations](#notes--limitations) for details.
+
 ### MBOX parsing
 
 For `.mbox` files:
@@ -334,6 +377,7 @@ These smoke tests validate batch-vs-streaming parity and Gmail capability/metada
 - This crate does **not** implement OAuth flows; use provider “app passwords” / tokens as needed.
 - IMAP does **not** provide contacts; `contacts::EmailAddress` is just a shared type used for parsed address fields.
 - Attachment `bytes` are stored in memory but are `serde(skip_...)` by default (i.e. they will not be included in JSON if you serialize `ParsedEmail`).
+- **PST attachment binary data is unavailable.** The `outlook-pst` crate's public API returns `Rc<dyn Message>` trait objects which expose attachment *metadata* (filename, MIME type, size) but not binary content. Extracting bytes requires `Attachment::read()` which needs the concrete `UnicodeMessage`/`AnsiMessage` types — but those, along with `UnicodeStore`/`AnsiStore` and the `read_write` module, are `pub(crate)` in the crate. PST attachments will have `sha256: ""` and no MIME parts in the RFC 822 output. This requires an upstream change to [microsoft/outlook-pst-rs](https://github.com/microsoft/outlook-pst-rs) (e.g. adding `open_attachment()` to the `Store` trait, or making the concrete types public). MSG and RFC 822 attachments work fully.
 
 ## Related
 

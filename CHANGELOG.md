@@ -1,3 +1,18 @@
+## 0.3.0 - 2026-06-11
+
+### Added
+
+- **MSG (.msg) parsing** — `parse_msg()` reads Outlook `.msg` files into `ParsedEmail` with full attachment binary data, SHA256 hashes, and MIME round-trip. Uses the `msg-parser` crate.
+- **PST (.pst) parsing** — `parse_pst_messages()` walks Outlook `.pst` archive folder hierarchies and yields `PstMessage { parsed, rfc822, folder }` per message. Uses the `outlook-pst` crate (Microsoft-authored, MIT licensed).
+- `ParsedAttachment._bytes` field (`Option<Vec<u8>>`, `#[serde(skip)]`) for formats that can provide in-memory attachment data (MSG).
+- PST folder name preserved in `PstMessage.folder` for mailbox tagging.
+
+### Known limitations
+
+- PST attachment binary data is unavailable due to the `outlook-pst` crate's public API (see README). Metadata (filename, MIME type, size) is extracted; SHA256 is empty.
+
+---
+
 ## 0.2.0 - 2026-06-03
 
 ### Changed

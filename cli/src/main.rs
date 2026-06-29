@@ -570,6 +570,7 @@ fn run_mbox_threads(
             lifecycle_lexicon: lifecycle_lexicon.clone(),
             keep_raw: false,
             keep_body_html: bodies_dir.is_some(),
+            keep_attachment_bytes: attachments_dir.is_some(),
         },
     )
     .with_context(|| format!("parse mbox {}", path.display()))?;
@@ -733,6 +734,7 @@ fn run_dir_threads(
                         owner_emails: owner_emails.to_vec(),
                         lifecycle_lexicon: lifecycle_lexicon.clone(),
                         keep_body_html: bodies_dir.is_some(),
+                        keep_attachment_bytes: attachments_dir.is_some(),
                     },
                 ) {
                     Ok(parsed) => {
@@ -764,6 +766,7 @@ fn run_dir_threads(
                     lifecycle_lexicon: lifecycle_lexicon.clone(),
                     keep_raw: false,
                     keep_body_html: bodies_dir.is_some(),
+                    keep_attachment_bytes: attachments_dir.is_some(),
                 },
             );
 

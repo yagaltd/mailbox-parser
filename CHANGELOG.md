@@ -1,3 +1,18 @@
+## 0.4.0 - 2026-06-29
+
+### Added
+
+- **`keep_attachment_bytes` option** on `ParseRfc822Options` (default false). When true, raw attachment bytes are decoded from the MIME body and retained in `ParsedAttachment._bytes` for RFC 822 / mbox messages (previously only MSG populated `_bytes`). Lets downstream consumers write attachment files to disk without re-reading the source.
+- **`keep_attachment_bytes` on `MboxParseOptions`**, plumbed into the inner RFC 822 parse.
+- **CLI `--attachments-dir` now works for mbox/dir** (not just MSG): the CLI sets `keep_attachment_bytes` when an attachments dir is requested, so `export_attachments` writes real files for mbox. Attachment paths are injected into the canonical JSON (`attachments[].path`).
+
+### Limitations
+
+- IMAP sync still parses via `parse_rfc822` (no options) — `keep_body_html` / `keep_attachment_bytes` are not yet wired through `SyncImapOptions`. mbox/dir/MSG paths are fully supported.
+- PST attachment bytes remain unavailable (outlook-pst crate limitation).
+
+---
+
 ## 0.3.0 - 2026-06-11
 
 ### Added

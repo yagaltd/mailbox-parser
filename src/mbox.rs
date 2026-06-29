@@ -41,6 +41,11 @@ pub struct MboxParseOptions {
     /// when downstream code needs the original HTML for rendering (e.g. a UI
     /// that renders message bodies with links and inline images).
     pub keep_body_html: bool,
+    /// If true, retain raw attachment bytes in `ParsedAttachment._bytes`
+    /// (decoded from the MIME body). Default: false — saves memory for large
+    /// mailboxes. Set to true when a downstream consumer writes attachment
+    /// files to disk.
+    pub keep_attachment_bytes: bool,
 }
 
 impl Default for MboxParseOptions {
@@ -53,6 +58,7 @@ impl Default for MboxParseOptions {
             lifecycle_lexicon: None,
             keep_raw: false,
             keep_body_html: false,
+            keep_attachment_bytes: false,
         }
     }
 }
@@ -108,6 +114,7 @@ pub fn parse_mbox_file(path: &Path, options: MboxParseOptions) -> Result<MboxPar
                     owner_emails: options.owner_emails.clone(),
                     lifecycle_lexicon: options.lifecycle_lexicon.clone(),
                     keep_body_html: options.keep_body_html,
+                    keep_attachment_bytes: options.keep_attachment_bytes,
                 },
             ) {
                 Ok(parsed) => {

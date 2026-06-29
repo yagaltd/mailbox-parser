@@ -311,6 +311,25 @@ let mail = parse_mbox_file(
 This keeps the **canonical/render split**: canonical JSON stays text-only and
 token-lean for LLM ingestion, while the original HTML lives separately for UIs.
 
+#### Retaining attachment bytes (`keep_attachment_bytes`)
+
+By default the parser discards attachment bytes after hashing (only metadata
+survives in `ParsedAttachment`). Set `keep_attachment_bytes: true` to retain
+the decoded bytes in `ParsedAttachment._bytes` — needed when a downstream
+consumer writes attachment files to disk:
+
+```rust
+let mail = parse_mbox_file(
+    Path::new("mailbox.mbox"),
+    MboxParseOptions { keep_attachment_bytes: true, ..Default::default() },
+)?;
+// each mail.messages[i].parsed.attachments[j]._bytes is now Some(Vec<u8>)
+```
+
+Works for RFC 822 / mbox (bytes decoded from the MIME body) and MSG. PST is
+metadata-only (crate limitation). The CLI sets this automatically when
+`--attachments-dir` is given.
+
 The CLI exposes this as `--bodies-dir <dir>` (on `mbox`/`imap`/`dir threads`),
 which keeps `body_html` and writes one `bodies/{message_key}.html` per message —
 render assets fetched on demand by a UI, with no change to the canonical schema:

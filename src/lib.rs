@@ -540,6 +540,11 @@ pub struct ParseRfc822Options {
     /// Saves ~65% of memory for large mailboxes since raw HTML is the biggest
     /// string resident. Set to true only if downstream code needs the original HTML.
     pub keep_body_html: bool,
+    /// If true (default false), retain raw attachment bytes in `ParsedAttachment._bytes`
+    /// for RFC 822 / mbox messages (bytes are decoded from the MIME body). Default
+    /// false to keep memory low for large mailboxes; set true when a downstream
+    /// consumer writes attachment files to disk.
+    pub keep_attachment_bytes: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -651,7 +656,8 @@ pub fn parse_rfc822_with_options(
     let body_canonical = build_canonical_body(body_text.as_deref(), body_html.as_deref());
     let body_html = if options.keep_body_html { body_html } else { None };
 
-    let (attachments, mut forwarded_messages) = collect_attachments_and_forwards(&message)?;
+    let (attachments, mut forwarded_messages) =
+        collect_attachments_and_forwards(&message, options.keep_attachment_bytes)?;
     let blocks = if body_canonical.trim().is_empty() {
         Vec::new()
     } else {
@@ -1279,6 +1285,7 @@ fn cleanup_html_boilerplate(text: &str) -> String {
 
 fn collect_attachments_and_forwards(
     message: &Message<'_>,
+    keep_bytes: bool,
 ) -> Result<(Vec<ParsedAttachment>, Vec<ParsedForwardedMessage>)> {
     let mut attachments = Vec::new();
     let mut forwarded = Vec::new();
@@ -1327,7 +1334,7 @@ fn collect_attachments_and_forwards(
                 sha256,
                 content_id,
                 content_disposition,
-                _bytes: None,
+                _bytes: if keep_bytes { Some(contents.to_vec()) } else { None },
             });
         }
 

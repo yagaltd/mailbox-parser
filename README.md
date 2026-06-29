@@ -340,6 +340,21 @@ mailbox-parser-cli mbox threads \
   --bodies-dir ./bodies --owner-email you@example.com
 ```
 
+**Multiple sources — `--account-id`.** Every thread carries an `account_id`
+field. The mbox and dir paths default it to `"mbox"` / `"dir"`; pass
+`--account-id <name>` to stamp a custom identifier so multiple imports stay
+distinguishable in a unified UI (IMAP already uses its configured `account_id`):
+
+```bash
+mailbox-parser-cli mbox threads --path work.mbox  --account-id work  --out work.json  --bodies-dir ./bodies
+mailbox-parser-cli mbox threads --path personal.mbox --account-id home --out home.json --bodies-dir ./bodies
+mailbox-parser-cli dir  threads --path ./eml-export --account-id support --out support.json --bodies-dir ./bodies
+```
+
+Because `message_key` is derived from the `Message-ID`, the three exports can
+share one `bodies/` and `attachments/` directory without collisions; merge the
+JSON arrays into a single `data.json` for a unified inbox.
+
 ### IMAP sync (incremental)
 
 The IMAP sync returns parsed emails plus some IMAP metadata:

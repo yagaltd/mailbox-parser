@@ -177,6 +177,11 @@ enum MboxCommand {
         #[arg(long)]
         out: PathBuf,
 
+        /// Account identifier stamped onto every thread (lets you distinguish multiple
+        /// mbox imports in a unified UI). Defaults to `"mbox"`.
+        #[arg(long = "account-id", default_value = "mbox")]
+        account_id: String,
+
         /// Limit output to the newest N threads.
         #[arg(long = "max")]
         max_threads: Option<usize>,
@@ -274,6 +279,11 @@ enum DirCommand {
         /// Output file or directory.
         #[arg(long)]
         out: PathBuf,
+
+        /// Account identifier stamped onto every thread (lets you distinguish multiple
+        /// directory imports in a unified UI). Defaults to `"dir"`.
+        #[arg(long = "account-id", default_value = "dir")]
+        account_id: String,
 
         /// Process files recursively in subdirectories.
         #[arg(long, default_value_t = false)]
@@ -399,6 +409,7 @@ fn run_mbox(args: MboxArgs) -> Result<()> {
         MboxCommand::Threads {
             path,
             out,
+            account_id,
             max_threads,
             max_messages,
             strict,
@@ -421,6 +432,7 @@ fn run_mbox(args: MboxArgs) -> Result<()> {
         } => run_mbox_threads(
             &path,
             &out,
+            &account_id,
             max_threads,
             max_messages,
             strict,
@@ -543,6 +555,7 @@ fn load_cli_lifecycle_lexicon(
 fn run_mbox_threads(
     path: &PathBuf,
     out: &PathBuf,
+    account_id: &str,
     max_threads: Option<usize>,
     max_messages: Option<usize>,
     strict: bool,
@@ -600,7 +613,7 @@ fn run_mbox_threads(
     let all_threads: Vec<JsonThreadOut> = threads
         .into_iter()
         .map(|t| JsonThreadOut {
-            account_id: "mbox".to_string(),
+            account_id: account_id.to_string(),
             mailboxes: vec![path.to_string_lossy().to_string()],
             thread: t,
         })
@@ -627,6 +640,7 @@ fn run_dir(args: DirArgs) -> Result<()> {
         DirCommand::Threads {
             path,
             out,
+            account_id,
             recursive,
             max_threads,
             json_profile,
@@ -647,6 +661,7 @@ fn run_dir(args: DirArgs) -> Result<()> {
         } => run_dir_threads(
             &path,
             &out,
+            &account_id,
             recursive,
             max_threads,
             json_profile,
@@ -673,6 +688,7 @@ fn run_dir(args: DirArgs) -> Result<()> {
 fn run_dir_threads(
     dir_path: &PathBuf,
     out: &PathBuf,
+    account_id: &str,
     recursive: bool,
     max_threads: Option<usize>,
     json_profile: JsonProfile,
@@ -831,7 +847,7 @@ fn run_dir_threads(
     let all_threads: Vec<JsonThreadOut> = threads
         .into_iter()
         .map(|t| JsonThreadOut {
-            account_id: "dir".to_string(),
+            account_id: account_id.to_string(),
             mailboxes: vec![dir_path.to_string_lossy().to_string()],
             thread: t,
         })

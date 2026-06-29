@@ -1,3 +1,15 @@
+## 0.4.2 - 2026-06-29
+
+### Added
+
+- **`--account-id <NAME>` flag for `mbox threads` and `dir threads`.** Lets you stamp a custom account identifier onto every exported thread, so multiple mbox / directory imports can be distinguished in a unified UI. Previously both paths hardcoded `account_id: "mbox"` / `"dir"`, making two imported mailboxes indistinguishable. The flag defaults to the old values (`"mbox"` / `"dir"`) for backward compatibility. IMAP already uses its configured `account_id`.
+
+### Limitations
+
+- PST attachment bytes remain unavailable (outlook-pst crate limitation).
+
+---
+
 ## 0.4.1 - 2026-06-29
 
 ### Added

@@ -52,6 +52,8 @@ fn strict_mode_avoids_false_splits() {
             owner_emails: Vec::new(),
             lifecycle_lexicon: None,
             keep_raw: false,
+            keep_body_html: false,
+            keep_attachment_bytes: false,
         },
     );
     assert!(report.errors.is_empty());

@@ -83,6 +83,18 @@ pub struct CanonicalMessage {
     pub forwarded_messages: Vec<ParsedForwardedMessage>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub forwarded_segments: Vec<ParsedForwardedSegment>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body_text: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body_html: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body_canonical: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_headers: Option<std::collections::BTreeMap<String, String>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -244,6 +256,58 @@ fn canonicalize_email_message(
         .iter()
         .map(|r| normalize_message_id(r))
         .collect();
+    // Universal text cleanup at the canonical boundary (mailto wrappers,
+    // &nbsp;): every consumer — JSON, HTML, markdown export, SDKs (v3) —
+    // sees the same clean text. body_text/body_canonical/body_html stay
+    // raw (provenance); only the segmented semantic fields are cleaned.
+    let reply = crate::text_clean::clean_text(&reply);
+    let quoted_blocks = quoted_blocks
+        .iter()
+        .map(|s| crate::text_clean::clean_text(s))
+        .collect::<Vec<_>>();
+    let forwarded_blocks = forwarded_blocks
+        .iter()
+        .map(|s| crate::text_clean::clean_text(s))
+        .collect::<Vec<_>>();
+    let disclaimer_blocks = disclaimer_blocks
+        .iter()
+        .map(|s| crate::text_clean::clean_text(s))
+        .collect::<Vec<_>>();
+    let salutation = salutation.map(|s| crate::text_clean::clean_text(&s));
+    let signature = signature.map(|s| crate::text_clean::clean_text(&s));
+    let forwarded_segments = email
+        .forwarded_segments
+        .iter()
+        .map(|seg| {
+            let mut s = seg.clone();
+            s.reply_text = crate::text_clean::clean_text(&s.reply_text);
+            s.salutation = s
+                .salutation
+                .as_ref()
+                .map(|x| crate::text_clean::clean_text(x));
+            s.signature = s
+                .signature
+                .as_ref()
+                .map(|x| crate::text_clean::clean_text(x));
+            s.disclaimer_blocks = s
+                .disclaimer_blocks
+                .iter()
+                .map(|x| crate::text_clean::clean_text(x))
+                .collect();
+            s.quoted_blocks = s
+                .quoted_blocks
+                .iter()
+                .map(|x| crate::text_clean::clean_text(x))
+                .collect();
+            s.forwarded_blocks = s
+                .forwarded_blocks
+                .iter()
+                .map(|x| crate::text_clean::clean_text(x))
+                .collect();
+            s
+        })
+        .collect::<Vec<_>>();
+
     let sender_domain_hint = first_domain_hint("from", &email.from);
     let mut participant_domain_hints = Vec::new();
     participant_domain_hints.extend(domain_hints("to", &email.to));
@@ -291,7 +355,11 @@ fn canonicalize_email_message(
         sender_domain_hint,
         participant_domain_hints,
         forwarded_messages: email.forwarded_messages.clone(),
-        forwarded_segments: email.forwarded_segments.clone(),
+        forwarded_segments,
+        body_text: email.body_text.clone(),
+        body_html: email.body_html.clone(),
+        body_canonical: Some(email.body_canonical.clone()),
+        raw_headers: Some(email.raw_headers.clone()),
     }
 }
 

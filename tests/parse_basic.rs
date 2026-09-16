@@ -117,12 +117,18 @@ fn thread_and_canonical_propagate_imap_metadata_present() {
     assert_eq!(threads.len(), 1);
     assert_eq!(threads[0].messages[0].flags, vec!["\\Seen", "\\Flagged"]);
     assert_eq!(threads[0].messages[0].x_gm_thrid, Some(123456789));
-    assert_eq!(threads[0].messages[0].x_gm_labels, vec!["\"Important\"", "inbox"]);
+    assert_eq!(
+        threads[0].messages[0].x_gm_labels,
+        vec!["\"Important\"", "inbox"]
+    );
 
     let canonical = canonicalize_threads(&threads);
     assert_eq!(canonical[0].messages[0].flags, vec!["\\Seen", "\\Flagged"]);
     assert_eq!(canonical[0].messages[0].x_gm_thrid, Some(123456789));
-    assert_eq!(canonical[0].messages[0].x_gm_labels, vec!["\"Important\"", "inbox"]);
+    assert_eq!(
+        canonical[0].messages[0].x_gm_labels,
+        vec!["\"Important\"", "inbox"]
+    );
 }
 
 #[test]
@@ -1447,7 +1453,9 @@ fn parse_direction_hint_detects_outbound_with_owner_email() {
         &ParseRfc822Options {
             owner_emails: vec!["owner@example.com".to_string()],
             lifecycle_lexicon: None,
-            keep_body_html: false,        },
+            keep_body_html: false,
+            keep_attachment_bytes: false,
+        },
     )
     .expect("parse");
     let direction = parsed.direction_hint.expect("direction");
@@ -1469,7 +1477,9 @@ fn parse_direction_hint_detects_inbound_with_owner_email() {
         &ParseRfc822Options {
             owner_emails: vec!["owner@example.com".to_string()],
             lifecycle_lexicon: None,
-            keep_body_html: false,        },
+            keep_body_html: false,
+            keep_attachment_bytes: false,
+        },
     )
     .expect("parse");
     let direction = parsed.direction_hint.expect("direction");
@@ -1740,7 +1750,9 @@ billing_action_rules:
         &ParseRfc822Options {
             owner_emails: vec![],
             lifecycle_lexicon: Some(Arc::new(lexicon)),
-            keep_body_html: false,        },
+            keep_body_html: false,
+            keep_attachment_bytes: false,
+        },
     )
     .expect("parse");
     assert_eq!(parsed.service_lifecycle_hints.len(), 1);
@@ -1794,7 +1806,9 @@ event_deadline_patterns:
         &ParseRfc822Options {
             owner_emails: vec![],
             lifecycle_lexicon: Some(Arc::new(lexicon)),
-            keep_body_html: false,        },
+            keep_body_html: false,
+            keep_attachment_bytes: false,
+        },
     )
     .expect("parse");
     assert_eq!(parsed.event_hints.len(), 1);
@@ -1843,7 +1857,9 @@ billing_action_rules:
         &ParseRfc822Options {
             owner_emails: vec![],
             lifecycle_lexicon: Some(Arc::new(lexicon)),
-            keep_body_html: false,        },
+            keep_body_html: false,
+            keep_attachment_bytes: false,
+        },
     )
     .expect("parse");
     assert_eq!(parsed.event_hints.len(), 1);

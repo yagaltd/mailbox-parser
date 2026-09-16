@@ -27,10 +27,12 @@ use std::rc::Rc;
 
 use anyhow::{Context, Result, anyhow};
 
+use outlook_pst::ltp::prop_context::PropertyValue;
+use outlook_pst::ltp::table_context::{
+    TableColumnDescriptor, TableContext, TableRowColumnValue, TableRowData,
+};
 use outlook_pst::messaging::message::Message;
 use outlook_pst::messaging::store::{EntryId, Store};
-use outlook_pst::ltp::prop_context::PropertyValue;
-use outlook_pst::ltp::table_context::{TableContext, TableColumnDescriptor, TableRowColumnValue, TableRowData};
 use outlook_pst::ndb::node_id::NodeIdType;
 
 use crate::{EmailAddress, ParsedAttachment, ParsedEmail};
@@ -62,7 +64,9 @@ pub fn parse_pst_messages(path: &Path) -> Result<Vec<PstMessage>> {
     let store = outlook_pst::open_store(path)
         .with_context(|| format!("failed to open PST file: {}", path.display()))?;
 
-    let ipm_subtree = store.properties().ipm_sub_tree_entry_id()
+    let ipm_subtree = store
+        .properties()
+        .ipm_sub_tree_entry_id()
         .with_context(|| "PST store has no IPM_SUBTREE entry ID")?;
 
     let mut messages = Vec::new();
@@ -77,10 +81,13 @@ fn walk_folder_hierarchy(
     folder_entry_id: &EntryId,
     messages: &mut Vec<PstMessage>,
 ) -> Result<()> {
-    let folder = store.open_folder(folder_entry_id)
+    let folder = store
+        .open_folder(folder_entry_id)
         .with_context(|| "failed to open PST folder")?;
 
-    let folder_name = folder.properties().display_name()
+    let folder_name = folder
+        .properties()
+        .display_name()
         .unwrap_or_else(|_| "Unknown".to_string());
 
     // Read messages in this folder
@@ -90,7 +97,11 @@ fn walk_folder_hierarchy(
 
         for row in &rows {
             if let Ok(Some(email)) = extract_message_from_row(
-                store, row, &columns, contents_table.as_ref(), &folder_name,
+                store,
+                row,
+                &columns,
+                contents_table.as_ref(),
+                &folder_name,
             ) {
                 messages.push(email);
             }
@@ -101,9 +112,13 @@ fn walk_folder_hierarchy(
     if let Some(hierarchy_table) = folder.hierarchy_table() {
         let hcols = hierarchy_table.context().columns().to_vec();
         for hrow in hierarchy_table.rows_matrix() {
-            if let Ok(Some(child_entry_id)) = row_to_entry_id(hrow, &hcols, hierarchy_table.as_ref()) {
+            if let Ok(Some(child_entry_id)) =
+                row_to_entry_id(hrow, &hcols, hierarchy_table.as_ref())
+            {
                 let node_type = child_entry_id.node_id().id_type().ok();
-                if node_type == Some(NodeIdType::NormalFolder) || node_type == Some(NodeIdType::SearchFolder) {
+                if node_type == Some(NodeIdType::NormalFolder)
+                    || node_type == Some(NodeIdType::SearchFolder)
+                {
                     if let Err(e) = walk_folder_hierarchy(store, &child_entry_id, messages) {
                         log::warn!("Error walking sub-folder: {e}");
                     }
@@ -123,7 +138,8 @@ fn extract_message_from_row(
     tctx: &dyn TableContext,
     folder_name: &str,
 ) -> Result<Option<PstMessage>> {
-    let row_values = row.columns(tctx.context())
+    let row_values = row
+        .columns(tctx.context())
         .with_context(|| "failed to read table row columns")?;
 
     let entry_id = extract_entry_id_from_row(&row_values, columns, tctx)?;
@@ -200,12 +216,13 @@ fn pst_msg_to_parsed_email(message: &Rc<dyn Message>) -> Result<ParsedEmail> {
         Vec::new()
     };
 
-    let date = read_prop_time_string(props, 0x0E06)
-        .or_else(|| read_prop_time_string(props, 0x3007));
-    let date_raw = date.clone().or_else(|| parsed_raw_headers.get("date").cloned());
+    let date =
+        read_prop_time_string(props, 0x0E06).or_else(|| read_prop_time_string(props, 0x3007));
+    let date_raw = date
+        .clone()
+        .or_else(|| parsed_raw_headers.get("date").cloned());
 
-    let sender_name = read_prop_string(props, 0x0C1F)
-        .or_else(|| read_prop_string(props, 0x0C1E));
+    let sender_name = read_prop_string(props, 0x0C1F).or_else(|| read_prop_string(props, 0x0C1E));
     let sender_email = read_prop_string(props, 0x0E04).unwrap_or_default();
 
     let from = if !sender_email.is_empty() {
@@ -290,7 +307,11 @@ fn pst_msg_to_rfc822(message: &Rc<dyn Message>) -> Result<Vec<u8>> {
         }
     }
 
-    ensure_header(&mut buf, "From", &format_sender_pst(&sender_name, &sender_email));
+    ensure_header(
+        &mut buf,
+        "From",
+        &format_sender_pst(&sender_name, &sender_email),
+    );
     ensure_header(&mut buf, "To", &format_emails(&to));
     if !cc.is_empty() {
         ensure_header(&mut buf, "Cc", &format_emails(&cc));
@@ -309,7 +330,11 @@ fn pst_msg_to_rfc822(message: &Rc<dyn Message>) -> Result<Vec<u8>> {
     // --- Content-Type & Body ---
     if is_multipart {
         let boundary = format!("=_pst_{:016x}", rand_boundary());
-        write_header_pst(&mut buf, "Content-Type", &format!("multipart/mixed; boundary=\"{boundary}\""));
+        write_header_pst(
+            &mut buf,
+            "Content-Type",
+            &format!("multipart/mixed; boundary=\"{boundary}\""),
+        );
         ensure_blank_line(&mut buf);
 
         // text/plain part
@@ -348,23 +373,37 @@ fn pst_msg_to_rfc822(message: &Rc<dyn Message>) -> Result<Vec<u8>> {
 // Helper functions
 // ---------------------------------------------------------------------------
 
-fn read_prop_string(props: &outlook_pst::messaging::message::MessageProperties, id: u16) -> Option<String> {
+fn read_prop_string(
+    props: &outlook_pst::messaging::message::MessageProperties,
+    id: u16,
+) -> Option<String> {
     let value = props.get(id)?;
     match value {
         PropertyValue::String8(s) => {
             let s = String::from_utf8_lossy(s.buffer());
             let trimmed = s.trim();
-            if trimmed.is_empty() { None } else { Some(trimmed.to_string()) }
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
         }
         PropertyValue::Unicode(s) => {
             let trimmed = s.to_string().trim().to_string();
-            if trimmed.is_empty() { None } else { Some(trimmed) }
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
         }
         _ => None,
     }
 }
 
-fn read_prop_time_string(props: &outlook_pst::messaging::message::MessageProperties, id: u16) -> Option<String> {
+fn read_prop_time_string(
+    props: &outlook_pst::messaging::message::MessageProperties,
+    id: u16,
+) -> Option<String> {
     let value = props.get(id)?;
     match value {
         PropertyValue::Time(ts) => Some(filetime_to_rfc3339(*ts)),
@@ -388,7 +427,9 @@ fn filetime_to_rfc3339(filetime: i64) -> String {
     }
 }
 
-fn extract_recipients(message: &Rc<dyn Message>) -> (Vec<EmailAddress>, Vec<EmailAddress>, Vec<EmailAddress>) {
+fn extract_recipients(
+    message: &Rc<dyn Message>,
+) -> (Vec<EmailAddress>, Vec<EmailAddress>, Vec<EmailAddress>) {
     let mut to = Vec::new();
     let mut cc = Vec::new();
     let mut bcc = Vec::new();
@@ -399,18 +440,24 @@ fn extract_recipients(message: &Rc<dyn Message>) -> (Vec<EmailAddress>, Vec<Emai
                 let email = get_string(&row_values, recipient_table.as_ref(), 0x39FE)
                     .or_else(|| get_string(&row_values, recipient_table.as_ref(), 0x0C1F))
                     .unwrap_or_default();
-                let name = get_string(&row_values, recipient_table.as_ref(), 0x3001)
-                    .unwrap_or_default();
-                let recipient_type = get_i32(&row_values, recipient_table.as_ref(), 0x0C15)
-                    .unwrap_or(1);
+                let name =
+                    get_string(&row_values, recipient_table.as_ref(), 0x3001).unwrap_or_default();
+                let recipient_type =
+                    get_i32(&row_values, recipient_table.as_ref(), 0x0C15).unwrap_or(1);
 
-                let addr = if email.contains('@') || email.is_empty() { email } else {
+                let addr = if email.contains('@') || email.is_empty() {
+                    email
+                } else {
                     get_string(&row_values, recipient_table.as_ref(), 0x39FE).unwrap_or_default()
                 };
 
                 if let Some(parsed) = EmailAddress::new(
                     &addr,
-                    if name.is_empty() || name == addr { None } else { Some(name.clone()) },
+                    if name.is_empty() || name == addr {
+                        None
+                    } else {
+                        Some(name.clone())
+                    },
                 ) {
                     match recipient_type {
                         2 => cc.push(parsed),
@@ -431,14 +478,14 @@ fn extract_attachments_metadata(message: &Rc<dyn Message>) -> Vec<ParsedAttachme
     if let Some(attachment_table) = message.attachment_table() {
         for row in attachment_table.rows_matrix() {
             if let Ok(row_values) = row.columns(attachment_table.context()) {
-                let filename = get_string(&row_values, attachment_table.as_ref(), 0x3707)
-                    .unwrap_or_default();
-                let long_filename = get_string(&row_values, attachment_table.as_ref(), 0x370E)
-                    .unwrap_or_default();
-                let mime_tag = get_string(&row_values, attachment_table.as_ref(), 0x3704)
-                    .unwrap_or_default();
-                let ext = get_string(&row_values, attachment_table.as_ref(), 0x3714)
-                    .unwrap_or_default();
+                let filename =
+                    get_string(&row_values, attachment_table.as_ref(), 0x3707).unwrap_or_default();
+                let long_filename =
+                    get_string(&row_values, attachment_table.as_ref(), 0x370E).unwrap_or_default();
+                let mime_tag =
+                    get_string(&row_values, attachment_table.as_ref(), 0x3704).unwrap_or_default();
+                let ext =
+                    get_string(&row_values, attachment_table.as_ref(), 0x3714).unwrap_or_default();
                 let content_id = get_string(&row_values, attachment_table.as_ref(), 0x3712);
 
                 let display_name = if !long_filename.is_empty() {
@@ -455,8 +502,8 @@ fn extract_attachments_metadata(message: &Rc<dyn Message>) -> Vec<ParsedAttachme
                     crate::mime_from_extension(&ext)
                 };
 
-                let size = get_i32(&row_values, attachment_table.as_ref(), 0x0E20)
-                    .unwrap_or(0) as usize;
+                let size =
+                    get_i32(&row_values, attachment_table.as_ref(), 0x0E20).unwrap_or(0) as usize;
 
                 attachments.push(ParsedAttachment {
                     filename: display_name,
@@ -552,7 +599,8 @@ fn row_to_entry_id(
     columns: &[TableColumnDescriptor],
     tctx: &dyn TableContext,
 ) -> Result<Option<EntryId>> {
-    let row_values = row.columns(tctx.context())
+    let row_values = row
+        .columns(tctx.context())
         .with_context(|| "failed to read hierarchy table row")?;
     extract_entry_id_from_row(&row_values, columns, tctx)
 }
@@ -594,7 +642,11 @@ fn ensure_header(buf: &mut Vec<u8>, name: &str, value: &str) {
 fn has_header(buf: &[u8], lowercase_name_colon: &str) -> bool {
     let text = String::from_utf8_lossy(buf);
     for line in text.lines() {
-        if line.trim_start().to_ascii_lowercase().starts_with(lowercase_name_colon) {
+        if line
+            .trim_start()
+            .to_ascii_lowercase()
+            .starts_with(lowercase_name_colon)
+        {
             return true;
         }
     }
@@ -637,7 +689,9 @@ fn parse_raw_headers_string(text: &str) -> BTreeMap<String, String> {
 
     for line in normalized.lines() {
         let line = line.trim_end();
-        if line.is_empty() { break; }
+        if line.is_empty() {
+            break;
+        }
         if line.starts_with(' ') || line.starts_with('\t') {
             if !cur_key.is_empty() {
                 cur_val.push(' ');
@@ -673,7 +727,9 @@ fn parse_address_header(header_value: &str) -> Vec<EmailAddress> {
     let mut out = Vec::new();
     for part in header_value.split(',') {
         let part = part.trim();
-        if part.is_empty() { continue; }
+        if part.is_empty() {
+            continue;
+        }
         if let Some(open) = part.rfind('<') {
             if let Some(close) = part[open..].find('>') {
                 let email = part[open + 1..open + close].trim();
@@ -681,7 +737,11 @@ fn parse_address_header(header_value: &str) -> Vec<EmailAddress> {
                 if !email.is_empty() {
                     if let Some(addr) = EmailAddress::new(
                         email,
-                        if name.is_empty() { None } else { Some(name.to_string()) },
+                        if name.is_empty() {
+                            None
+                        } else {
+                            Some(name.to_string())
+                        },
                     ) {
                         out.push(addr);
                     }

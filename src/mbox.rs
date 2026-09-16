@@ -124,7 +124,11 @@ pub fn parse_mbox_file(path: &Path, options: MboxParseOptions) -> Result<MboxPar
                         internal_date,
                         flags: Vec::new(),
                         parsed,
-                        raw: if options.keep_raw { msg.raw } else { Vec::new() },
+                        raw: if options.keep_raw {
+                            msg.raw
+                        } else {
+                            Vec::new()
+                        },
                     });
                 }
                 Err(err) => {

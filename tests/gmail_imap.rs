@@ -31,12 +31,19 @@ fn gmail_account_from_env() -> Option<ImapAccountConfig> {
 }
 
 fn skip_msg() {
-    eprintln!(
-        "skip gmail_imap smoke: set GMAIL_IMAP_HOST/PORT/USER/APP_PASSWORD/MAILBOX env vars"
-    );
+    eprintln!("skip gmail_imap smoke: set GMAIL_IMAP_HOST/PORT/USER/APP_PASSWORD/MAILBOX env vars");
 }
 
-fn msg_fingerprint(m: &SyncedEmail) -> (u32, Vec<String>, Option<u64>, Vec<String>, Option<u64>, Option<u32>) {
+fn msg_fingerprint(
+    m: &SyncedEmail,
+) -> (
+    u32,
+    Vec<String>,
+    Option<u64>,
+    Vec<String>,
+    Option<u64>,
+    Option<u32>,
+) {
     (
         m.uid,
         m.flags.clone(),
@@ -65,6 +72,8 @@ fn gmail_imap_streaming_parity_matches_batch() -> Result<()> {
         force_full: true,
         unseen_only: false,
         keep_raw: false,
+        keep_body_html: false,
+        keep_attachment_bytes: false,
     };
 
     let batch = sync_imap_delta(&account, &prior, options.clone()).context("batch sync")?;
@@ -90,7 +99,11 @@ fn gmail_imap_streaming_parity_matches_batch() -> Result<()> {
     assert!(streaming.messages.is_empty());
     assert_eq!(batch.messages.len(), streamed_messages.len());
 
-    let mut batch_fp = batch.messages.iter().map(msg_fingerprint).collect::<Vec<_>>();
+    let mut batch_fp = batch
+        .messages
+        .iter()
+        .map(msg_fingerprint)
+        .collect::<Vec<_>>();
     let mut streaming_fp = streamed_messages
         .iter()
         .map(msg_fingerprint)
@@ -121,6 +134,8 @@ fn gmail_imap_reports_gmail_capability_and_metadata_shape() -> Result<()> {
         force_full: false,
         unseen_only: false,
         keep_raw: false,
+        keep_body_html: false,
+        keep_attachment_bytes: false,
     };
 
     let res = sync_imap_delta(&account, &prior, options)?;

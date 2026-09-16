@@ -1,3 +1,22 @@
+## Unreleased
+
+### Changed
+
+- **Data layer: universal text cleanup at the canonicalization boundary** — `reply_text`, `quoted_blocks`, `forwarded_blocks`, `disclaimer_blocks`, `salutation`, `signature` and forwarded-segment fields now have `<mailto:addr>` autolink wrappers stripped (all four real-world forms) and HTML entities (`&nbsp;` etc.) decoded, so every consumer — JSON, HTML, markdown, SDKs — sees the same clean text. `body_text`/`body_canonical`/`body_html` stay raw (provenance). Also fixes a panic: Turkish `İ` (U+0130) lowercases to two chars and crashed offset-based case-insensitive scans (found by the 13.6 GB gmail corpus).
+
+- **`--format markdown` now emits MorphEditor-compatible markdown (OKF frontmatter)** instead of the old debug view: frontmatter (`kind: email`, `threadId`, `title` with RE:/FW:/AW:/TR:/Ré:-chains stripped, `ingested`), one `## {from} · {date}` heading per message, blockquoted history (single-level), real `- ` list items for genuine bullets (markers normalized), `*italic*` signatures, `<mailto:addr>` wrappers stripped, percent-encoded `![](path)` / `[filename](path)` attachment links. Grammar validated byte-stable against MorphEditor's BlockModel — golden fixtures in `tests/fixtures/okf/` (Rust: `markdown_fixture_goldens`; MorphEditor: `tests/unit/okf-roundtrip.test.js`).
+
+## 0.5.0 - 2026-07-01
+
+### Added
+
+- **Four pass-through fields on `CanonicalMessage`:** `body_text`, `body_html`, `body_canonical`, and `raw_headers` are now preserved in canonical JSON output (`--json-profile canonical`). Previously these fields were dropped during canonicalization, forcing email UI consumers to rely on sidecar files (`--bodies-dir`) or re-parse raw sources. All four are `Option<T>` with `#[serde(skip_serializing_if = "Option::is_none")]` for backward compatibility.
+- **CLI `--keep-body-html` flag** for `imap sync`, `mbox threads`, and `dir threads`. When set, the original HTML body is retained in `ParsedEmail.body_html` and flows through to `CanonicalMessage.body_html` in canonical output. The flag is independent of `--bodies-dir` (which still works for backward-compatible sidecar export).
+
+### Changed
+
+- **`CanonicalMessage` struct** now carries 4 additional fields after `forwarded_segments`. Old JSON without these fields deserializes correctly (fields default to `None`). New JSON includes `body_text`, `body_canonical`, and `raw_headers` by default; `body_html` requires `--keep-body-html`.
+
 ## 0.4.2 - 2026-06-29
 
 ### Added

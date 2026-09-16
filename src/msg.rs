@@ -31,8 +31,8 @@ pub struct MsgParseResult {
 
 /// Parse an Outlook .msg file from a byte slice.
 pub fn parse_msg(bytes: &[u8]) -> Result<MsgParseResult> {
-    let msg = msg_parser::Outlook::from_slice(bytes)
-        .map_err(|e| anyhow!("msg_parser failed: {e}"))?;
+    let msg =
+        msg_parser::Outlook::from_slice(bytes).map_err(|e| anyhow!("msg_parser failed: {e}"))?;
     let parsed = msg_to_parsed_email(&msg)?;
     let rfc822 = msg_to_rfc822(&msg)?;
     Ok(MsgParseResult { parsed, rfc822 })
@@ -40,8 +40,7 @@ pub fn parse_msg(bytes: &[u8]) -> Result<MsgParseResult> {
 
 /// Parse an Outlook .msg file from a filesystem path.
 pub fn parse_msg_file(path: &std::path::Path) -> Result<MsgParseResult> {
-    let bytes =
-        std::fs::read(path).map_err(|e| anyhow!("read {}: {e}", path.display()))?;
+    let bytes = std::fs::read(path).map_err(|e| anyhow!("read {}: {e}", path.display()))?;
     parse_msg(&bytes)
 }
 
@@ -82,7 +81,9 @@ fn msg_to_parsed_email(msg: &msg_parser::Outlook) -> Result<ParsedEmail> {
         } else {
             Some(msg.sender.name.clone())
         };
-        EmailAddress::new(&msg.sender.email, name).into_iter().collect()
+        EmailAddress::new(&msg.sender.email, name)
+            .into_iter()
+            .collect()
     };
 
     let person_to_email = |p: &msg_parser::Person| -> Option<EmailAddress> {
@@ -173,17 +174,16 @@ fn msg_to_parsed_email(msg: &msg_parser::Outlook) -> Result<ParsedEmail> {
         .get("in-reply-to")
         .map(|s| crate::normalize_message_id(s))
         .filter(|s| !s.is_empty());
-    let references =
-        if let Some(raw) = raw_headers.get("references") {
-            raw.split(|c: char| c.is_whitespace() || c == ',')
-                .map(|t| t.trim())
-                .filter(|t| !t.is_empty())
-                .map(|t| crate::normalize_message_id(t))
-                .filter(|t| !t.is_empty())
-                .collect()
-        } else {
-            Vec::new()
-        };
+    let references = if let Some(raw) = raw_headers.get("references") {
+        raw.split(|c: char| c.is_whitespace() || c == ',')
+            .map(|t| t.trim())
+            .filter(|t| !t.is_empty())
+            .map(|t| crate::normalize_message_id(t))
+            .filter(|t| !t.is_empty())
+            .collect()
+    } else {
+        Vec::new()
+    };
 
     Ok(ParsedEmail {
         message_id,
@@ -255,11 +255,7 @@ fn msg_to_rfc822(msg: &msg_parser::Outlook) -> Result<Vec<u8>> {
         }
         write_header(&mut buf, "Subject", &msg.subject);
         if !msg.message_delivery_time.is_empty() {
-            write_header(
-                &mut buf,
-                "Date",
-                &msg.message_delivery_time,
-            );
+            write_header(&mut buf, "Date", &msg.message_delivery_time);
         } else if !msg.client_submit_time.is_empty() {
             write_header(&mut buf, "Date", &msg.client_submit_time);
         }
@@ -274,9 +270,17 @@ fn msg_to_rfc822(msg: &msg_parser::Outlook) -> Result<Vec<u8>> {
         let boundary = format!("=_msg_parser_{:016x}", rand_boundary());
         if !msg.headers.raw.is_empty() {
             // Replace or add Content-Type header
-            write_header(&mut buf, "Content-Type", &format!("multipart/mixed; boundary=\"{boundary}\""));
+            write_header(
+                &mut buf,
+                "Content-Type",
+                &format!("multipart/mixed; boundary=\"{boundary}\""),
+            );
         } else {
-            write_header(&mut buf, "Content-Type", &format!("multipart/mixed; boundary=\"{boundary}\""));
+            write_header(
+                &mut buf,
+                "Content-Type",
+                &format!("multipart/mixed; boundary=\"{boundary}\""),
+            );
         }
         buf.extend_from_slice(b"\r\n"); // end of headers
 
@@ -314,8 +318,16 @@ fn msg_to_rfc822(msg: &msg_parser::Outlook) -> Result<Vec<u8>> {
                 "application/octet-stream"
             };
 
-            write_header(&mut buf, "Content-Type", &format!("{mime}; name=\"{filename}\""));
-            write_header(&mut buf, "Content-Disposition", &format!("attachment; filename=\"{filename}\""));
+            write_header(
+                &mut buf,
+                "Content-Type",
+                &format!("{mime}; name=\"{filename}\""),
+            );
+            write_header(
+                &mut buf,
+                "Content-Disposition",
+                &format!("attachment; filename=\"{filename}\""),
+            );
             if !att.content_id.is_empty() {
                 write_header(&mut buf, "Content-ID", &format!("<{}>", att.content_id));
             }
@@ -442,7 +454,11 @@ fn parse_address_header(header_value: &str) -> Vec<EmailAddress> {
                 if !email.is_empty() {
                     if let Some(addr) = EmailAddress::new(
                         email,
-                        if name.is_empty() { None } else { Some(name.to_string()) },
+                        if name.is_empty() {
+                            None
+                        } else {
+                            Some(name.to_string())
+                        },
                     ) {
                         out.push(addr);
                     }
@@ -460,8 +476,6 @@ fn parse_address_header(header_value: &str) -> Vec<EmailAddress> {
     }
     out
 }
-
-
 
 fn append_boundary_delimiter(buf: &mut Vec<u8>, boundary: &str) {
     buf.extend_from_slice(b"--");

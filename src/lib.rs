@@ -4,6 +4,7 @@ mod imap;
 mod lifecycle_lexicon;
 mod mbox;
 mod projection;
+mod text_clean;
 
 pub use canonical::{CanonicalAttachment, CanonicalMessage, CanonicalThread, canonicalize_threads};
 pub use email_text::{
@@ -19,17 +20,18 @@ pub use lifecycle_lexicon::{
     LifecycleLexicon, LifecycleRuleMatch, default_lifecycle_lexicon,
     load_lifecycle_lexicon_from_yaml, load_lifecycle_lexicon_with_overrides,
 };
+pub use text_clean::{clean_text, clean_text_line, strip_mailto_wrappers};
 #[cfg(feature = "msg-parser")]
 pub mod msg;
 
 #[cfg(feature = "msg-parser")]
-pub use msg::{parse_msg, parse_msg_file, MsgParseError, MsgParseResult};
+pub use msg::{MsgParseError, MsgParseResult, parse_msg, parse_msg_file};
 
 #[cfg(feature = "pst-parser")]
 pub mod pst;
 
 #[cfg(feature = "pst-parser")]
-pub use pst::{parse_pst_messages, PstMessage, PstParseError};
+pub use pst::{PstMessage, PstParseError, parse_pst_messages};
 
 pub use mbox::{
     MboxMessage, MboxParseError, MboxParseOptions, MboxParseReport, MboxReadOptions,
@@ -654,7 +656,11 @@ pub fn parse_rfc822_with_options(
     let body_html = message.body_html(0).map(|s| s.to_string());
     let body_text = message.body_text(0).map(|s| s.to_string());
     let body_canonical = build_canonical_body(body_text.as_deref(), body_html.as_deref());
-    let body_html = if options.keep_body_html { body_html } else { None };
+    let body_html = if options.keep_body_html {
+        body_html
+    } else {
+        None
+    };
 
     let (attachments, mut forwarded_messages) =
         collect_attachments_and_forwards(&message, options.keep_attachment_bytes)?;
@@ -1334,7 +1340,11 @@ fn collect_attachments_and_forwards(
                 sha256,
                 content_id,
                 content_disposition,
-                _bytes: if keep_bytes { Some(contents.to_vec()) } else { None },
+                _bytes: if keep_bytes {
+                    Some(contents.to_vec())
+                } else {
+                    None
+                },
             });
         }
 
@@ -4446,28 +4456,72 @@ fn decode_html_entities(s: &str) -> String {
 /// Infer a MIME type from a file extension.
 pub(crate) fn mime_from_extension(ext: &str) -> String {
     let s = ext.trim_start_matches('.').to_ascii_lowercase();
-    if s == "jpg" || s == "jpeg" { return "image/jpeg".to_string(); }
-    if s == "png" { return "image/png".to_string(); }
-    if s == "gif" { return "image/gif".to_string(); }
-    if s == "bmp" { return "image/bmp".to_string(); }
-    if s == "svg" { return "image/svg+xml".to_string(); }
-    if s == "webp" { return "image/webp".to_string(); }
-    if s == "pdf" { return "application/pdf".to_string(); }
-    if s == "doc" || s == "docx" { return "application/msword".to_string(); }
-    if s == "xls" || s == "xlsx" { return "application/vnd.ms-excel".to_string(); }
-    if s == "ppt" || s == "pptx" { return "application/vnd.ms-powerpoint".to_string(); }
-    if s == "zip" { return "application/zip".to_string(); }
-    if s == "gz" || s == "gzip" { return "application/gzip".to_string(); }
-    if s == "tar" { return "application/x-tar".to_string(); }
-    if s == "txt" { return "text/plain".to_string(); }
-    if s == "html" || s == "htm" { return "text/html".to_string(); }
-    if s == "xml" { return "application/xml".to_string(); }
-    if s == "json" { return "application/json".to_string(); }
-    if s == "msg" { return "application/vnd.ms-outlook".to_string(); }
-    if s == "ics" { return "text/calendar".to_string(); }
-    if s == "csv" { return "text/csv".to_string(); }
-    if s == "mp3" { return "audio/mpeg".to_string(); }
-    if s == "mp4" { return "video/mp4".to_string(); }
+    if s == "jpg" || s == "jpeg" {
+        return "image/jpeg".to_string();
+    }
+    if s == "png" {
+        return "image/png".to_string();
+    }
+    if s == "gif" {
+        return "image/gif".to_string();
+    }
+    if s == "bmp" {
+        return "image/bmp".to_string();
+    }
+    if s == "svg" {
+        return "image/svg+xml".to_string();
+    }
+    if s == "webp" {
+        return "image/webp".to_string();
+    }
+    if s == "pdf" {
+        return "application/pdf".to_string();
+    }
+    if s == "doc" || s == "docx" {
+        return "application/msword".to_string();
+    }
+    if s == "xls" || s == "xlsx" {
+        return "application/vnd.ms-excel".to_string();
+    }
+    if s == "ppt" || s == "pptx" {
+        return "application/vnd.ms-powerpoint".to_string();
+    }
+    if s == "zip" {
+        return "application/zip".to_string();
+    }
+    if s == "gz" || s == "gzip" {
+        return "application/gzip".to_string();
+    }
+    if s == "tar" {
+        return "application/x-tar".to_string();
+    }
+    if s == "txt" {
+        return "text/plain".to_string();
+    }
+    if s == "html" || s == "htm" {
+        return "text/html".to_string();
+    }
+    if s == "xml" {
+        return "application/xml".to_string();
+    }
+    if s == "json" {
+        return "application/json".to_string();
+    }
+    if s == "msg" {
+        return "application/vnd.ms-outlook".to_string();
+    }
+    if s == "ics" {
+        return "text/calendar".to_string();
+    }
+    if s == "csv" {
+        return "text/csv".to_string();
+    }
+    if s == "mp3" {
+        return "audio/mpeg".to_string();
+    }
+    if s == "mp4" {
+        return "video/mp4".to_string();
+    }
     "application/octet-stream".to_string()
 }
 

@@ -356,7 +356,16 @@ fn sync_imap_delta_inner(
                 if raw.is_empty() {
                     continue;
                 }
-                let parsed = parse_rfc822_with_options(&raw, &ParseRfc822Options { owner_emails: Vec::new(), lifecycle_lexicon: None, keep_body_html: options.keep_body_html, keep_attachment_bytes: options.keep_attachment_bytes }).context("parse rfc822")?;
+                let parsed = parse_rfc822_with_options(
+                    &raw,
+                    &ParseRfc822Options {
+                        owner_emails: Vec::new(),
+                        lifecycle_lexicon: None,
+                        keep_body_html: options.keep_body_html,
+                        keep_attachment_bytes: options.keep_attachment_bytes,
+                    },
+                )
+                .context("parse rfc822")?;
                 let flags = fetch
                     .flags()
                     .iter()
@@ -397,7 +406,8 @@ fn sync_imap_delta_inner(
     }
 
     if supports_modseq && changed_since > 0 {
-        let query_with_vanished = build_changed_since_query(changed_since, true, supports_gmail_ext);
+        let query_with_vanished =
+            build_changed_since_query(changed_since, true, supports_gmail_ext);
         let query_without_vanished =
             build_changed_since_query(changed_since, false, supports_gmail_ext);
         let fetches = if supports_qresync {
@@ -445,7 +455,16 @@ fn sync_imap_delta_inner(
             if raw.is_empty() {
                 continue;
             }
-            let parsed = parse_rfc822_with_options(&raw, &ParseRfc822Options { owner_emails: Vec::new(), lifecycle_lexicon: None, keep_body_html: options.keep_body_html, keep_attachment_bytes: options.keep_attachment_bytes }).context("parse rfc822")?;
+            let parsed = parse_rfc822_with_options(
+                &raw,
+                &ParseRfc822Options {
+                    owner_emails: Vec::new(),
+                    lifecycle_lexicon: None,
+                    keep_body_html: options.keep_body_html,
+                    keep_attachment_bytes: options.keep_attachment_bytes,
+                },
+            )
+            .context("parse rfc822")?;
             let flags = fetch
                 .flags()
                 .iter()
@@ -501,7 +520,16 @@ fn sync_imap_delta_inner(
             if raw.is_empty() {
                 continue;
             }
-            let parsed = parse_rfc822_with_options(&raw, &ParseRfc822Options { owner_emails: Vec::new(), lifecycle_lexicon: None, keep_body_html: options.keep_body_html, keep_attachment_bytes: options.keep_attachment_bytes }).context("parse rfc822")?;
+            let parsed = parse_rfc822_with_options(
+                &raw,
+                &ParseRfc822Options {
+                    owner_emails: Vec::new(),
+                    lifecycle_lexicon: None,
+                    keep_body_html: options.keep_body_html,
+                    keep_attachment_bytes: options.keep_attachment_bytes,
+                },
+            )
+            .context("parse rfc822")?;
             let flags = fetch
                 .flags()
                 .iter()
@@ -747,6 +775,9 @@ mod tests {
         let map = parse_gmail_metadata_from_uid_fetch_response(raw).expect("parse response");
         let (thrid, labels) = map.get(&42).expect("uid 42 metadata");
         assert_eq!(*thrid, Some(1278455344230334865));
-        assert_eq!(labels, &vec!["\\Important".to_string(), "inbox".to_string()]);
+        assert_eq!(
+            labels,
+            &vec!["\\Important".to_string(), "inbox".to_string()]
+        );
     }
 }

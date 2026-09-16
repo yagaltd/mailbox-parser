@@ -144,6 +144,14 @@ enum ImapCommand {
         #[arg(long)]
         bodies_dir: Option<PathBuf>,
 
+        /// Retain HTML body in canonical JSON (use with --json-profile canonical).
+        #[arg(long = "keep-body-html", default_value_t = false)]
+        keep_body_html: bool,
+
+        /// Exclude raw_headers from canonical/tree JSON output.
+        #[arg(long = "strip-raw-headers", default_value_t = false)]
+        strip_raw_headers: bool,
+
         #[arg(long, value_enum, default_value_t = SplitBy::None)]
         split_by: SplitBy,
 
@@ -225,6 +233,14 @@ enum MboxCommand {
         /// during parsing.
         #[arg(long)]
         bodies_dir: Option<PathBuf>,
+
+        /// Retain HTML body in canonical JSON (use with --json-profile canonical).
+        #[arg(long = "keep-body-html", default_value_t = false)]
+        keep_body_html: bool,
+
+        /// Exclude raw_headers from canonical/tree JSON output.
+        #[arg(long = "strip-raw-headers", default_value_t = false)]
+        strip_raw_headers: bool,
 
         /// Mailbox owner email(s) used to infer message direction (inbound/outbound/self).
         #[arg(long = "owner-email")]
@@ -317,6 +333,14 @@ enum DirCommand {
         #[arg(long)]
         bodies_dir: Option<PathBuf>,
 
+        /// Retain HTML body in canonical JSON (use with --json-profile canonical).
+        #[arg(long = "keep-body-html", default_value_t = false)]
+        keep_body_html: bool,
+
+        /// Exclude raw_headers from canonical/tree JSON output.
+        #[arg(long = "strip-raw-headers", default_value_t = false)]
+        strip_raw_headers: bool,
+
         /// Mailbox owner email(s) used to infer message direction (inbound/outbound/self).
         #[arg(long = "owner-email")]
         owner_emails: Vec<String>,
@@ -375,6 +399,8 @@ fn run_imap(args: ImapArgs) -> Result<()> {
             attachments,
             attachments_dir,
             bodies_dir,
+            keep_body_html,
+            strip_raw_headers,
             split_by,
             format,
             html_default_view,
@@ -392,6 +418,8 @@ fn run_imap(args: ImapArgs) -> Result<()> {
             attachments,
             attachments_dir.as_deref(),
             bodies_dir.as_deref(),
+            keep_body_html || bodies_dir.is_some(),
+            strip_raw_headers,
             split_by,
             format,
             HtmlUiConfig {
@@ -420,6 +448,8 @@ fn run_mbox(args: MboxArgs) -> Result<()> {
             attachments,
             attachments_dir,
             bodies_dir,
+            keep_body_html,
+            strip_raw_headers,
             owner_emails,
             lifecycle_lexicon,
             lifecycle_override_jsonl,
@@ -443,6 +473,8 @@ fn run_mbox(args: MboxArgs) -> Result<()> {
             attachments,
             attachments_dir.as_deref(),
             bodies_dir.as_deref(),
+            keep_body_html || bodies_dir.is_some(),
+            strip_raw_headers,
             &owner_emails,
             lifecycle_lexicon.as_deref(),
             lifecycle_override_jsonl.as_deref(),
@@ -469,10 +501,15 @@ fn run_imap_sync(
     attachments: bool,
     attachments_dir: Option<&Path>,
     bodies_dir: Option<&Path>,
+    keep_body_html: bool,
+    strip_raw_headers: bool,
     split_by: SplitBy,
     format: OutputFormat,
     html_ui: HtmlUiConfig,
 ) -> Result<()> {
+    if bodies_dir.is_some() {
+        eprintln!("warning: --bodies-dir is deprecated; use --keep-body-html instead");
+    }
     let raw = fs::read_to_string(config_path)
         .with_context(|| format!("read config {}", config_path.display()))?;
     let cfg: ImapConfigFile = toml::from_str(&raw).context("parse imap config")?;
@@ -503,8 +540,8 @@ fn run_imap_sync(
             account_id,
             mailboxes,
             &mut backend,
-            bodies_dir.is_some(),
-            attachments_dir.is_some(),
+            keep_body_html,
+            attachments || attachments_dir.is_some(),
         )?);
     }
     write_threads_output(
@@ -517,6 +554,7 @@ fn run_imap_sync(
         attachments,
         attachments_dir,
         bodies_dir,
+        strip_raw_headers,
         split_by,
         format,
         html_ui,
@@ -566,6 +604,8 @@ fn run_mbox_threads(
     attachments: bool,
     attachments_dir: Option<&Path>,
     bodies_dir: Option<&Path>,
+    keep_body_html: bool,
+    strip_raw_headers: bool,
     owner_emails: &[String],
     lifecycle_lexicon_path: Option<&Path>,
     lifecycle_override_jsonl_path: Option<&Path>,
@@ -573,6 +613,9 @@ fn run_mbox_threads(
     format: OutputFormat,
     html_ui: HtmlUiConfig,
 ) -> Result<()> {
+    if bodies_dir.is_some() {
+        eprintln!("warning: --bodies-dir is deprecated; use --keep-body-html instead");
+    }
     let lifecycle_lexicon =
         load_cli_lifecycle_lexicon(lifecycle_lexicon_path, lifecycle_override_jsonl_path)?;
     let report = parse_mbox_file(
@@ -584,8 +627,8 @@ fn run_mbox_threads(
             owner_emails: owner_emails.to_vec(),
             lifecycle_lexicon: lifecycle_lexicon.clone(),
             keep_raw: false,
-            keep_body_html: bodies_dir.is_some(),
-            keep_attachment_bytes: attachments_dir.is_some(),
+            keep_body_html: keep_body_html,
+            keep_attachment_bytes: attachments || attachments_dir.is_some(),
         },
     )
     .with_context(|| format!("parse mbox {}", path.display()))?;
@@ -629,6 +672,7 @@ fn run_mbox_threads(
         attachments,
         attachments_dir,
         bodies_dir,
+        strip_raw_headers,
         split_by,
         format,
         html_ui,
@@ -649,6 +693,8 @@ fn run_dir(args: DirArgs) -> Result<()> {
             attachments,
             attachments_dir,
             bodies_dir,
+            keep_body_html,
+            strip_raw_headers,
             owner_emails,
             lifecycle_lexicon,
             lifecycle_override_jsonl,
@@ -670,6 +716,8 @@ fn run_dir(args: DirArgs) -> Result<()> {
             attachments,
             attachments_dir.as_deref(),
             bodies_dir.as_deref(),
+            keep_body_html || bodies_dir.is_some(),
+            strip_raw_headers,
             &owner_emails,
             lifecycle_lexicon.as_deref(),
             lifecycle_override_jsonl.as_deref(),
@@ -697,6 +745,8 @@ fn run_dir_threads(
     attachments: bool,
     attachments_dir: Option<&Path>,
     bodies_dir: Option<&Path>,
+    keep_body_html: bool,
+    strip_raw_headers: bool,
     owner_emails: &[String],
     lifecycle_lexicon_path: Option<&Path>,
     lifecycle_override_jsonl_path: Option<&Path>,
@@ -704,6 +754,9 @@ fn run_dir_threads(
     format: OutputFormat,
     html_ui: HtmlUiConfig,
 ) -> Result<()> {
+    if bodies_dir.is_some() {
+        eprintln!("warning: --bodies-dir is deprecated; use --keep-body-html instead");
+    }
     let lifecycle_lexicon =
         load_cli_lifecycle_lexicon(lifecycle_lexicon_path, lifecycle_override_jsonl_path)?;
     if !dir_path.is_dir() {
@@ -751,8 +804,8 @@ fn run_dir_threads(
                     &ParseRfc822Options {
                         owner_emails: owner_emails.to_vec(),
                         lifecycle_lexicon: lifecycle_lexicon.clone(),
-                        keep_body_html: bodies_dir.is_some(),
-                        keep_attachment_bytes: attachments_dir.is_some(),
+                        keep_body_html: keep_body_html,
+                        keep_attachment_bytes: attachments || attachments_dir.is_some(),
                     },
                 ) {
                     Ok(parsed) => {
@@ -783,8 +836,8 @@ fn run_dir_threads(
                     owner_emails: owner_emails.to_vec(),
                     lifecycle_lexicon: lifecycle_lexicon.clone(),
                     keep_raw: false,
-                    keep_body_html: bodies_dir.is_some(),
-                    keep_attachment_bytes: attachments_dir.is_some(),
+                    keep_body_html: keep_body_html,
+                    keep_attachment_bytes: attachments || attachments_dir.is_some(),
                 },
             );
 
@@ -863,6 +916,7 @@ fn run_dir_threads(
         attachments,
         attachments_dir,
         bodies_dir,
+        strip_raw_headers,
         split_by,
         format,
         html_ui,
@@ -902,7 +956,7 @@ struct JsonThreadOut {
     thread: ParsedThread,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct JsonThreadCanonicalOut {
     account_id: String,
     mailboxes: Vec<String>,
@@ -1148,6 +1202,7 @@ fn write_threads_output(
     attachments: bool,
     attachments_dir: Option<&Path>,
     bodies_dir: Option<&Path>,
+    strip_raw_headers: bool,
     split_by: SplitBy,
     format: OutputFormat,
     html_ui: HtmlUiConfig,
@@ -1204,13 +1259,26 @@ fn write_threads_output(
 
     inject_canonical_attachment_paths(&mut canonical_threads_all, &attachment_paths);
 
+    // Apply --strip-raw-headers only at the JSON/JSONL boundary for canonical/tree
+    // profiles. Do not mutate the shared canonical model used by HTML/CSV/Markdown.
+    let strip_for_json_output = strip_raw_headers
+        && matches!(format, OutputFormat::Json | OutputFormat::Jsonl)
+        && matches!(json_profile, JsonProfile::Canonical | JsonProfile::Tree);
+    let canonical_threads_stripped;
+    let canonical_threads_json: &[JsonThreadCanonicalOut] = if strip_for_json_output {
+        canonical_threads_stripped = stripped_raw_headers_clone(&canonical_threads_all);
+        &canonical_threads_stripped
+    } else {
+        &canonical_threads_all
+    };
+
     let canonical_threads: Option<&[JsonThreadCanonicalOut]> = match json_profile {
-        JsonProfile::Canonical => Some(&canonical_threads_all),
+        JsonProfile::Canonical => Some(canonical_threads_json),
         _ => None,
     };
     let tree_threads: Option<Vec<JsonThreadTreeOut>> = match json_profile {
         JsonProfile::Tree => Some(
-            canonical_threads_all
+            canonical_threads_json
                 .iter()
                 .map(to_tree_thread)
                 .collect::<Vec<_>>(),
@@ -1362,6 +1430,16 @@ fn write_threads_output(
             }
         }
     }
+}
+
+fn stripped_raw_headers_clone(threads: &[JsonThreadCanonicalOut]) -> Vec<JsonThreadCanonicalOut> {
+    let mut out = threads.to_vec();
+    for t in &mut out {
+        for m in &mut t.thread.messages {
+            m.raw_headers = None;
+        }
+    }
+    out
 }
 
 fn write_jsonl_file<T: Serialize>(out: &Path, threads: &[T]) -> Result<()> {
@@ -1640,6 +1718,8 @@ fn write_markdown_split(
     Ok(())
 }
 
+/// Markdown export: OKF frontmatter + MorphEditor-compatible body. Pure view
+/// over the canonical thread; grammar pinned by docs/okf-thread-export-plan.md + goldens.
 fn render_thread_markdown<W: Write>(
     out: &mut W,
     t: &JsonThreadCanonicalOut,
@@ -1649,72 +1729,44 @@ fn render_thread_markdown<W: Write>(
         return Ok(());
     }
 
-    fn thread_heading_variant(thread: &CanonicalThread) -> Option<&'static str> {
-        if thread.messages.iter().any(|m| {
-            !m.forwarded_blocks.is_empty()
-                || m.subject
-                    .as_deref()
-                    .is_some_and(|s| s.to_ascii_lowercase().contains("fwd:"))
-        }) {
-            return Some("fwd");
-        }
-
-        if thread.messages.len() >= 2 {
-            return Some("re");
-        }
-
-        None
-    }
-
     // Messages are already sorted oldest->newest.
     let root = &t.thread.messages[0];
-    let root_from = root
-        .from
-        .first()
-        .map(format_email)
-        .unwrap_or_else(|| "(unknown)".to_string());
+    let title = root
+        .subject
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(display_title)
+        .filter(|s| !s.is_empty())
+        .or_else(|| first_nonempty_line(&root.reply_text).map(|l| l.trim().to_string()))
+        .unwrap_or_else(|| format!("thread {}", t.thread.thread_id));
+    // YAML single-quoted title ('' doubling): no backslash escapes —
+    // BlockModel strips \" on round-trip, so double-quoted style would drift
+    // subjects that are bare URLs get linkified by their frontmatter
+    // paragraph parse — emit the canonical form directly; multi-line
+    // subjects run the full body pipeline per line (list mapping, escaping,
+    // emphasis, linkify) so ` - ` title lines stay paragraphs too
+    let title = title.split('\n').map(md_body_line).collect::<Vec<_>>().join("\n");
+    let title = format!("'{}'", title.replace('\'', "''"));
 
-    let root_snip = first_nonempty_line(&root.reply_text)
-        .or_else(|| {
-            root.forwarded_blocks
-                .first()
-                .and_then(|b| first_nonempty_line(b))
-        })
-        .or_else(|| {
-            root.quoted_blocks
-                .first()
-                .and_then(|b| first_nonempty_line(b))
-        })
-        .unwrap_or("(no body)")
-        .trim();
+    writeln!(out, "---")?;
+    writeln!(out, "kind: email")?;
+    writeln!(out, "threadId: {}", t.thread.thread_id)?;
+    writeln!(out, "title: {title}")?;
+    let ingested: Vec<&str> = t
+        .thread
+        .messages
+        .iter()
+        .map(|m| m.message_key.as_str())
+        .collect();
+    writeln!(out, "ingested: [{}]", ingested.join(", "))?;
+    writeln!(out, "---\n")?;
 
-    let heading = match thread_heading_variant(&t.thread) {
-        Some(v) => format!("Thread - {v}"),
-        None => "Thread".to_string(),
-    };
-
-    writeln!(
-        out,
-        "# [{} {}] from {}: {}\n",
-        heading, t.thread.thread_id, root_from, root_snip
-    )?;
-    writeln!(out, "Account: {}\n", t.account_id)?;
-    writeln!(out, "Mailboxes: {}\n", t.mailboxes.join(", "))?;
-
-    // Root message body/metadata is printed under the H1.
-    render_message_block(out, root, false, attachment_paths)?;
-
-    for msg in t.thread.messages.iter().skip(1) {
-        let from = msg
-            .from
-            .first()
-            .map(format_email)
-            .unwrap_or_else(|| "(unknown)".to_string());
-        let snip = first_nonempty_line(&msg.reply_text)
-            .unwrap_or("(no body)")
-            .trim();
-        writeln!(out, "## from {}: {}\n", from, snip)?;
-        render_message_block(out, msg, true, attachment_paths)?;
+    for (i, msg) in t.thread.messages.iter().enumerate() {
+        if i > 0 {
+            writeln!(out, "---\n")?;
+        }
+        render_message_block(out, msg, attachment_paths)?;
     }
 
     Ok(())
@@ -1748,94 +1800,616 @@ fn thread_latest_key(thread: &ParsedThread) -> (i64, String) {
     (ts, thread.thread_id.clone())
 }
 
+/// One message as a markdown block sequence: `## {from} · {date}` heading, then
+/// paragraphs (salutation joins first), quoted, forwarded, signature, disclaimer,
+/// attachments. Order per the plan mapping table.
 fn render_message_block<W: Write>(
     out: &mut W,
     msg: &mailbox_parser::CanonicalMessage,
-    include_subject_heading: bool,
     attachment_paths: &HashMap<String, String>,
 ) -> Result<()> {
-    if include_subject_heading {
-        if let Some(subj) = msg.subject.as_deref().filter(|s| !s.trim().is_empty()) {
-            let subj = normalize_line_terminators(subj);
-            writeln!(out, "Subject: {}", subj.trim_end())?;
-        }
-    } else if let Some(subj) = msg.subject.as_deref().filter(|s| !s.trim().is_empty()) {
-        let subj = normalize_line_terminators(subj);
-        writeln!(out, "Subject: {}", subj.trim_end())?;
+    let who = msg
+        .from
+        .first()
+        .map(from_label)
+        .unwrap_or_else(|| "Unknown".to_string());
+    match short_date(msg.date.as_deref()) {
+        Some(d) => writeln!(out, "## {who} · {d}\n")?,
+        None => writeln!(out, "## {who}\n")?,
     }
 
-    if let Some(from) = msg.from.first() {
-        writeln!(out, "From: {}", format_email(from))?;
+    // Salutation joins the first paragraph block.
+    let body = match msg
+        .salutation
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        Some(sal) if !msg.reply_text.trim().is_empty() => format!("{sal}\n\n{}", msg.reply_text),
+        Some(sal) => sal.to_string(),
+        None => msg.reply_text.clone(),
+    };
+    md_paragraphs(out, &body)?;
+
+    for q in &msg.quoted_blocks {
+        md_blockquote(out, q)?;
     }
-    if !msg.to.is_empty() {
-        let tos = msg
-            .to
+
+    for seg in &msg.forwarded_segments {
+        writeln!(out, "---\n")?;
+        let from = seg
+            .headers
+            .from
+            .first()
+            .map(from_label)
+            .unwrap_or_else(|| "Unknown".to_string());
+        let subj = seg
+            .headers
+            .subject
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("(no subject)");
+        writeln!(out, "## Fwd: {subj} · {from}\n")?;
+        md_paragraphs(out, &seg.reply_text)?;
+        for q in &seg.quoted_blocks {
+            md_blockquote(out, q)?;
+        }
+        for b in &seg.forwarded_blocks {
+            md_raw_forwarded(out, b)?;
+        }
+        md_signature(out, seg.signature.as_deref())?;
+        for d in &seg.disclaimer_blocks {
+            md_paragraphs(out, d)?;
+        }
+    }
+
+    // Segments are the parsed refinement of the same forwarded bytes; rendering
+    // both duplicates content. Raw blocks are the fallback when parsing found none.
+    for b in msg
+        .forwarded_blocks
+        .iter()
+        .filter(|_| msg.forwarded_segments.is_empty())
+    {
+        md_raw_forwarded(out, b)?;
+    }
+
+    md_signature(out, msg.signature.as_deref())?;
+
+    for d in &msg.disclaimer_blocks {
+        md_paragraphs(out, d)?;
+    }
+
+    for a in &msg.attachments {
+        let p = md_encode_path(&md_attachment_path(a, attachment_paths));
+        let media = ["image/", "video/", "audio/"]
             .iter()
-            .map(format_email)
-            .collect::<Vec<_>>()
-            .join(", ");
-        writeln!(out, "To: {tos}")?;
-    }
-    if let Some(date) = msg.date.as_deref() {
-        writeln!(out, "Date: {date}")?;
-    }
-    if let Some(mid) = msg.message_id.as_deref() {
-        writeln!(out, "Message-ID: {mid}")?;
-    }
-    if msg.uid.is_some() {
-        writeln!(out, "UID: {}", msg.uid.unwrap_or(0))?;
-    }
-
-    writeln!(out)?;
-    let body = normalize_line_terminators(&msg.reply_text);
-    if !body.trim().is_empty() {
-        writeln!(out, "{}\n", body.trim_end())?;
-    }
-
-    if !msg.forwarded_blocks.is_empty() {
-        for (i, b) in msg.forwarded_blocks.iter().enumerate() {
-            writeln!(out, "### Forwarded {}\n", i + 1)?;
-            let b = normalize_line_terminators(b);
-            if !b.trim().is_empty() {
-                writeln!(out, "{}\n", b.trim_end())?;
-            }
-        }
-    }
-
-    if !msg.quoted_blocks.is_empty() {
-        for (i, b) in msg.quoted_blocks.iter().enumerate() {
-            writeln!(out, "### Quoted {}\n", i + 1)?;
-            let b = normalize_line_terminators(b);
-            if !b.trim().is_empty() {
-                writeln!(out, "{}\n", b.trim_end())?;
-            }
-        }
-    }
-
-    if !msg.attachments.is_empty() {
-        writeln!(out, "Attachments:")?;
-        for a in &msg.attachments {
+            .any(|m| a.mime_type.starts_with(m));
+        if media {
+            writeln!(out, "![]({p})\n")?;
+        } else {
             let name = a.filename.as_deref().unwrap_or("(unnamed)");
-            let p = a
-                .path
-                .as_deref()
-                .map(|s| s.to_string())
-                .or_else(|| attachment_paths.get(&a.sha256).cloned());
-
-            if let Some(p) = p {
-                writeln!(
-                    out,
-                    "- {} ({}, {} bytes) [{}]",
-                    name, a.mime_type, a.size, p
-                )?;
-            } else {
-                writeln!(out, "- {} ({}, {} bytes)", name, a.mime_type, a.size)?;
-            }
+            writeln!(out, "[{name}]({p})\n")?;
         }
-        writeln!(out)?;
     }
 
     Ok(())
+}
+
+fn md_raw_forwarded<W: Write>(out: &mut W, text: &str) -> Result<()> {
+    writeln!(out, "---\n")?;
+    writeln!(out, "## Forwarded\n")?;
+    md_paragraphs(out, text)
+}
+
+/// Display title: strip RE:/FW:/AW:/TR:/Ré:-style prefix chains from the
+/// subject for the exported frontmatter title. Prefixes may be spaced
+/// (`Ré :`) and the chain may wrap bracketed tags (`AW: Re:[## 349 ##] Re:
+/// …`) — tags are kept, the prefixes around them are not. Falls back to
+/// the raw subject when the chain strips to nothing. threadId untouched.
+fn display_title(subject: &str) -> String {
+    // word forms without colon; longest-first so `fwd` wins over `fw`
+    const PREFIXES: &[&str] = &[
+        "antw", "fwd", "res", "odp", "rif", "ynt", "re", "fw", "aw", "tr", "sv", "vs", "ré",
+    ];
+    let s = subject.trim();
+    let mut kept = String::new();
+    let mut rest = s;
+    loop {
+        let r = rest.trim_start();
+        // bracketed tag (ticket ids etc.): keep it, keep scanning after it
+        if r.starts_with('[') {
+            if let Some(end) = r.find(']') {
+                kept.push_str(&r[..=end]);
+                rest = &r[end + 1..];
+                continue;
+            }
+        }
+        // prefix word + optional spaces + ':'
+        let lower = r.to_lowercase();
+        let mut stripped = None;
+        for p in PREFIXES {
+            if !lower.starts_with(p) {
+                continue;
+            }
+            let after_word = &r[p.len()..];
+            let trimmed = after_word.trim_start();
+            if let Some(after_colon) = trimmed.strip_prefix(':') {
+                stripped = Some(after_colon.trim_start());
+                break;
+            }
+        }
+        match stripped {
+            Some("") => return s.to_string(), // chain strips to nothing → original
+            Some(next) => rest = next,
+            None => {
+                rest = r;
+                break;
+            }
+        }
+    }
+    let body = rest.trim();
+    if body.is_empty() {
+        return s.to_string();
+    }
+    if kept.is_empty() {
+        body.to_string()
+    } else {
+        format!("{kept} {body}")
+    }
+}
+
+/// Percent-encode an attachment path for markdown URL syntax
+/// (`![](path)` / `[name](path)`). Keeps the URL-unreserved set + `/`;
+/// spaces, parens, UTF-8 etc. become %XX. On-disk names are untouched —
+/// MorphEditor's media loader decodes (plan 041 TASK 4).
+fn md_encode_path(p: &str) -> String {
+    let mut out = String::with_capacity(p.len());
+    for b in p.bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~' | b'/') {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
+/// §8.1: genuine unordered-list lines (`-`/`*`/`+` + space) map to real
+/// markdown list items, normalized to the `-` marker — MorphEditor's
+/// serializer re-emits every list item as `- `, so `* `/`+ ` would not be
+/// byte-stable. Ordered lists are NOT mapped (their serializer renumbers to
+/// `1.`); they stay escaped with their real numbers.
+fn md_map_list_marker(line: &str) -> String {
+    let indent = line.len() - line.trim_start().len();
+    let rest = &line[indent..];
+    let marker = rest.chars().next();
+    if matches!(marker, Some('-') | Some('*') | Some('+'))
+        && rest[1..].starts_with(char::is_whitespace)
+    {
+        let after = rest[1..].strip_prefix(' ').unwrap_or(&rest[1..]);
+        // column 0: MorphEditor's list detector is anchored (no leading
+        // whitespace) and its serializer re-emits 2 spaces per indent level —
+        // indented `- ` lines are not byte-stable, so nesting is dropped
+        return format!("- {after}");
+    }
+    line.to_string()
+}
+
+fn from_label(a: &mailbox_parser::EmailAddress) -> String {
+    a.name
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(&a.address)
+        .to_string()
+}
+
+/// RFC3339 -> `YYYY-MM-DD HH:MM` heading date; raw string as fallback.
+fn short_date(date: Option<&str>) -> Option<String> {
+    let d = date?.trim();
+    if d.is_empty() {
+        return None;
+    }
+    chrono::DateTime::parse_from_rfc3339(d)
+        .ok()
+        .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+        .or_else(|| Some(d.to_string()))
+}
+
+/// Escape a line whose first non-space char is a markdown sigil (`# > - * + ` ` `` `|``,
+/// ordered-list `1.`) so it stays a paragraph. No other transformations.
+fn md_escape_line(line: &str) -> String {
+    let indent = line.len() - line.trim_start().len();
+    let rest = &line[indent..];
+    if rest.is_empty() || !md_line_needs_escape(rest) {
+        return line.to_string();
+    }
+    // ordered list: escape the dot, CommonMark style (`1\.` stays a paragraph)
+    let digits = rest.chars().take_while(|c| c.is_ascii_digit()).count();
+    if digits > 0 {
+        let mut s = String::from(&line[..indent + digits]);
+        s.push('\\');
+        s.push_str(&line[indent + digits..]);
+        return s;
+    }
+    let mut s = String::from(&line[..indent]);
+    s.push('\\');
+    s.push_str(rest);
+    s
+}
+
+/// Mirrors MorphEditor's detectBlockType (+ fence capture) exactly — escape
+/// ONLY lines that would re-detect as a different block type. No blanket
+/// escaping: loose pipe rows and `*bold*` leaders stay bare (they re-parse
+/// as paragraphs anyway). Byte-parity enforced by tests/fixtures/okf/ goldens.
+fn md_line_needs_escape(rest: &str) -> bool {
+    // heading: 1-6 '#' then whitespace
+    if rest.starts_with('#') {
+        let hashes = rest.chars().take_while(|&c| c == '#').count();
+        if (1..=6).contains(&hashes) && rest[hashes..].starts_with(char::is_whitespace) {
+            return true;
+        }
+    }
+    // list/task: '-', '*' or '+' followed by whitespace → NOT escaped:
+    // genuine list lines map to real markdown list items (§8.1); they
+    // round-trip as LIST_ITEM blocks. Ordered lists stay escaped (below) —
+    // MorphEditor's serializer renumbers every item to `1.`, so bare `2.` is
+    // not byte-stable; escaping preserves the real numbers as literal text.
+    // ordered list: digits + '.' + whitespace
+    let digits = rest.chars().take_while(|c| c.is_ascii_digit()).count();
+    if digits > 0
+        && rest[digits..]
+            .strip_prefix('.')
+            .is_some_and(|after| after.starts_with(char::is_whitespace))
+    {
+        return true;
+    }
+    // blockquote: any leading '>'
+    if rest.starts_with('>') {
+        return true;
+    }
+    // code fence
+    if rest.starts_with("```") || rest.starts_with("~~~") {
+        return true;
+    }
+    // horizontal rule: [-*_]{3,} with optional trailing whitespace
+    let t = rest.trim_end();
+    t.chars().count() >= 3 && t.chars().all(|c| c == '-' || c == '*' || c == '_')
+}
+
+fn md_paragraphs<W: Write>(out: &mut W, text: &str) -> Result<()> {
+    let t = normalize_line_terminators(text);
+    if t.trim().is_empty() {
+        return Ok(());
+    }
+    for line in t.trim_end().split('\n') {
+        writeln!(out, "{}", md_body_line(line))?;
+    }
+    writeln!(out)?;
+    Ok(())
+}
+
+/// The shared per-line markdown pipeline (data-layer cleanups — mailto,
+/// entities — already applied at canonicalization): list mapping → sigil
+/// escaping → URL linkification. Order matters (escape before linkify;
+/// linkify must not re-enter explicit links).
+fn md_body_line(line: &str) -> String {
+    let line = md_escape_line(&md_map_list_marker(line));
+    // images only survive as col-0 blocks in their grammar; mid-paragraph or
+    // indented `![alt](url)` gets its url linkified — demote to a plain link
+    let line = if line.starts_with("![") {
+        line
+    } else {
+        line.replace("![", "[")
+    };
+    md_linkify_urls(&md_normalize_emphasis(&line))
+}
+
+/// Normalize source emphasis notation to MorphEditor's canonical marks:
+/// `___x___` → `***x***`, `__x__` → `**x**`, `_x_` → `*x*`. Their parser
+/// converts underscore marks and the serializer re-emits asterisks — the
+/// asterisk form is the only byte-stable spelling. Mirrors their
+/// word-boundary rule (openers/closers never inside a word → snake_case,
+/// urls and emails are untouched).
+fn md_normalize_emphasis(line: &str) -> String {
+    let bytes = line.as_bytes();
+    let is_word = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let boundary_before = |i: usize| i == 0 || !is_word(bytes[i - 1]);
+    let boundary_after = |i: usize| i >= bytes.len() || !is_word(bytes[i]);
+    let mut out = String::with_capacity(line.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'_' && boundary_before(i) {
+            let mut matched = false;
+            // longest first: ___ (bold+italic), __ (bold), _ (italic)
+            for (n, mark) in [(3usize, "***"), (2, "**"), (1, "*")] {
+                if !line[i..].starts_with(&"_".repeat(n)) {
+                    continue;
+                }
+                let inner = i + n;
+                if let Some(rel) = line[inner..].find(&"_".repeat(n)) {
+                    let end = inner + rel;
+                    let after = end + n;
+                    if end > inner && boundary_after(after) {
+                        out.push_str(mark);
+                        out.push_str(&line[inner..end]);
+                        out.push_str(mark);
+                        i = after;
+                        matched = true;
+                        break;
+                    }
+                }
+            }
+            if matched {
+                continue;
+            }
+        }
+        let ch = line[i..].chars().next().unwrap();
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+    out
+}
+
+fn md_blockquote<W: Write>(out: &mut W, text: &str) -> Result<()> {
+    let t = normalize_line_terminators(text);
+    if t.trim().is_empty() {
+        return Ok(());
+    }
+    for line in t.trim_end().split('\n') {
+        if line.trim().is_empty() {
+            // blank line ends the quote block; next `> ` line starts a new one
+            // (bare `>` serializes as `> ` with trailing space — not stable)
+            writeln!(out)?;
+        } else {
+            // strip any leading `> ` markers: nested quotes serialize with an
+            // indent in MorphEditor and break byte-stable round-trip — single-level
+            // only; leading spaces in the quote content collapse (`>  x` ≠ `> x`)
+            let bare = md_linkify_urls(strip_quote_markers(line).trim_start());
+            // images don't survive inside MorphEditor quotes (the inline
+            // parse linkifies the url) — demote `![alt](url)` to `[alt](url)`,
+            // anywhere in the line. Empty link text isn't an explicit link in
+            // their parser (`closeBracket > i+1` guard) — use the url as text.
+            let bare = if let Some(rest) = bare.strip_prefix('!') {
+                if rest.starts_with("[](") {
+                    if let Some(paren) = rest[3..].find(')') {
+                        let url = &rest[3..3 + paren];
+                        format!("[{url}]({url})")
+                    } else {
+                        bare
+                    }
+                } else if rest.starts_with('[') && explicit_link_span(rest).is_some() {
+                    rest.to_string()
+                } else {
+                    bare
+                }
+            } else {
+                bare
+            };
+            let bare = bare.replace("![", "[");
+            writeln!(out, "> {}", bare)?;
+        }
+    }
+    writeln!(out)?;
+    Ok(())
+}
+
+fn strip_quote_markers(line: &str) -> &str {
+    let mut s = line;
+    loop {
+        let t = s.trim_start();
+        if let Some(rest) = t.strip_prefix('>') {
+            s = rest.strip_prefix(' ').unwrap_or(rest);
+        } else {
+            return s;
+        }
+    }
+}
+
+fn md_signature<W: Write>(out: &mut W, sig: Option<&str>) -> Result<()> {
+    // Plain paragraphs — the `*…*` italic wrapper was dropped (2026-09-16):
+    // the mark fused with arbitrary signature content into hr/list shapes
+    // (`*--`, `--*`, `*1\.`) that are not byte-stable in MorphEditor.
+    // The body pipeline (mailto/list-map/escape/linkify) applies via
+    // md_paragraphs.
+    if let Some(sig) = sig.map(str::trim).filter(|s| !s.is_empty()) {
+        md_paragraphs(out, sig)?;
+    }
+    Ok(())
+}
+
+/// MorphEditor linkifies bare URLs on parse (regex `https?://[^\s<>\"]+`)
+/// and re-emits them as `[url](url)`. Emit that canonical form directly or
+/// round-trip isn't byte-stable. Also unwraps `<url>` autolink angle
+/// brackets (same leak class as mailto). Explicit `[text](href)` links are
+/// copied verbatim.
+fn md_linkify_urls(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut i = 0;
+    while i < line.len() {
+        let rest = &line[i..];
+        // `[](url)` empty-text links are NOT links in their parser
+        // (`closeBracket > i+1` guard) — the href gets linkified. Emit the
+        // url as text.
+        if rest.starts_with("[](") {
+            if let Some(paren) = rest[3..].find(')') {
+                let url = &rest[3..3 + paren];
+                out.push_str(&format!("[{url}]({url})"));
+                i += 4 + paren;
+                continue;
+            }
+        }
+        // `[imgUrl]<linkUrl>` — the HTML→text conversion of `<a><img></a>`:
+        // bracketed bare url (image) + angle autolink (target). Emit one
+        // clean link instead of piecewise-linkifying into nested brackets.
+        if rest.starts_with('[') {
+            let inner = &rest[1..];
+            if let Some(la) = url_len_stopped(inner, b']') {
+                if inner[la..].starts_with("]<") {
+                    let after = &inner[la + 2..];
+                    if let Some(lb) = bare_url_len(after) {
+                        if after[lb..].starts_with('>') {
+                            out.push_str(&format!("[{}]({})", &inner[..la], &after[..lb]));
+                            i += 1 + la + 2 + lb + 1;
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+        // `[[url]](url])` bracket soup from the HTML→text conversion of
+        // `<a><img></a>` links: normalize to the explicit `[a](b)` form —
+        // their parser linkifies the inner url and adds a layer otherwise
+        if rest.starts_with("[[") {
+            if let Some((a, b, span)) = double_bracket_link(rest) {
+                out.push_str(&format!("[{a}]({b})"));
+                i += span;
+                continue;
+            }
+        }
+        // explicit link: copy verbatim, skip past the closing paren
+        if rest.starts_with('[') {
+            if let Some(span) = explicit_link_span(rest) {
+                out.push_str(&rest[..span]);
+                i += span;
+                continue;
+            }
+        }
+        // `[url]` reference-style bracketed bare url → plain link
+        // (piecewise linkifying would nest brackets: `[` + `[url](url)` + `]`)
+        if rest.starts_with('[') {
+            let inner = &rest[1..];
+            if let Some(la) = url_len_stopped(inner, b']') {
+                let after = &inner[la..];
+                if after.starts_with(']') && !after.starts_with("](") {
+                    let url = &inner[..la];
+                    out.push_str(&format!("[{url}]({url})"));
+                    i += 1 + la + 1;
+                    continue;
+                }
+            }
+        }
+        // angle-wrapped autolink: <https://…> → [url](url)
+        if rest.starts_with('<') {
+            let inner = &rest[1..];
+            if let Some(url_len) = bare_url_len(inner) {
+                if inner[url_len..].starts_with('>') {
+                    let url = &inner[..url_len];
+                    out.push_str(&format!("[{url}]({url})"));
+                    i += 1 + url_len + 1;
+                    continue;
+                }
+            }
+        }
+        // bare url → [url](url)
+        if let Some(n) = bare_url_len(rest) {
+            let url = &rest[..n];
+            out.push_str(&format!("[{url}]({url})"));
+            i += n;
+            continue;
+        }
+        let ch = rest.chars().next().unwrap();
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+    out
+}
+
+/// Byte length of a bare URL at the start of `s`, mirroring MorphEditor's
+/// `^https?://[^\s<>\"]+` (trailing dots/parens are part of the URL).
+fn bare_url_len(s: &str) -> Option<usize> {
+    let start = if s.starts_with("http://") {
+        "http://".len()
+    } else if s.starts_with("https://") {
+        "https://".len()
+    } else {
+        return None;
+    };
+    let mut end = start;
+    for b in &s.as_bytes()[start..] {
+        if b.is_ascii_whitespace() || matches!(b, b'<' | b'>' | b'"') {
+            break;
+        }
+        end += 1;
+    }
+    if end == start {
+        return None; // scheme only, no host
+    }
+    Some(end)
+}
+
+/// Match `[[urlA]](urlB])` or `[[urlA]](urlB)` at the start of `s` —
+/// returns (urlA, urlB, byte span of the whole match).
+fn double_bracket_link(s: &str) -> Option<(&str, &str, usize)> {
+    let inner = &s[2..];
+    let la = url_len_stopped(inner, b']')?;
+    let a = &inner[..la];
+    let after_a = inner[la..].strip_prefix("]](")?;
+    let lb = url_len_stopped(after_a, b')')?;
+    let b = &after_a[..lb];
+    let tail = &after_a[lb..];
+    let span = if tail.starts_with("])])") {
+        2 + la + 3 + lb + 2
+    } else if tail.starts_with(')') {
+        2 + la + 3 + lb + 1
+    } else {
+        return None;
+    };
+    Some((a, b, span))
+}
+
+/// Like bare_url_len but with an extra stop byte (for bracket-soup parsing
+/// where the url run must not swallow `]` or `)`).
+fn url_len_stopped(s: &str, stop: u8) -> Option<usize> {
+    let start = if s.starts_with("http://") {
+        "http://".len()
+    } else if s.starts_with("https://") {
+        "https://".len()
+    } else {
+        return None;
+    };
+    let mut end = start;
+    for b in &s.as_bytes()[start..] {
+        if b.is_ascii_whitespace() || matches!(b, b'<' | b'>' | b'"') || *b == stop {
+            break;
+        }
+        end += 1;
+    }
+    if end == start {
+        return None;
+    }
+    Some(end)
+}
+
+/// Byte length of an explicit `[text](href)` link at the start of `s`, if any.
+fn explicit_link_span(s: &str) -> Option<usize> {
+    let close = s.find(']')?;
+    if !s[close + 1..].starts_with('(') {
+        return None;
+    }
+    let paren = s[close + 2..].find(')')? + close + 2;
+    Some(paren + 1)
+}
+
+fn md_attachment_path(
+    a: &mailbox_parser::CanonicalAttachment,
+    attachment_paths: &HashMap<String, String>,
+) -> String {
+    if let Some(p) = a.path.as_deref() {
+        return p.to_string();
+    }
+    if let Some(p) = attachment_paths.get(&a.sha256) {
+        return p.clone();
+    }
+    let ext = a
+        .filename
+        .as_deref()
+        .and_then(|f| f.rsplit_once('.'))
+        .map(|(_, e)| e.trim())
+        .filter(|e| !e.is_empty() && !e.contains('/') && !e.contains('\\'))
+        .unwrap_or_else(|| a.mime_type.rsplit('/').next().unwrap_or("bin"));
+    format!("attachments/{}.{}", a.sha256, ext)
 }
 
 fn to_compact_thread(
@@ -2172,8 +2746,7 @@ fn export_bodies(threads: &[JsonThreadOut], _base_dir: &Path, bodies_dir: &Path)
                 continue;
             }
             let path = bodies_dir.join(format!("{key}.html"));
-            fs::write(&path, html)
-                .with_context(|| format!("write body {}", path.display()))?;
+            fs::write(&path, html).with_context(|| format!("write body {}", path.display()))?;
             wrote += 1;
             if wrote.is_multiple_of(500) {
                 eprintln!("bodies_written={wrote}");
@@ -3203,6 +3776,9 @@ mod tests {
             message_key: key.to_string(),
             uid: None,
             internal_date: None,
+            flags: vec![],
+            x_gm_thrid: None,
+            x_gm_labels: vec![],
             message_id: message_id.map(|s| s.to_string()),
             in_reply_to: in_reply_to.map(|s| s.to_string()),
             references: references.iter().map(|s| s.to_string()).collect(),
@@ -3234,6 +3810,10 @@ mod tests {
             participant_domain_hints: vec![],
             forwarded_messages: vec![],
             forwarded_segments: vec![],
+            body_text: None,
+            body_html: None,
+            body_canonical: None,
+            raw_headers: None,
         }
     }
 
@@ -3343,6 +3923,9 @@ mod tests {
                     message_key: "k".to_string(),
                     uid: Some(1),
                     internal_date: Some("2026-01-01T00:00:00Z".to_string()),
+                    flags: vec![],
+                    x_gm_thrid: None,
+                    x_gm_labels: vec![],
                     email: mailbox_parser::ParsedEmail {
                         message_id: Some("mid".to_string()),
                         in_reply_to: None,
@@ -3412,7 +3995,7 @@ mod tests {
             sha256: "deadbeef".to_string(),
             content_id: None,
             content_disposition: None,
-            bytes: vec![0x61, 0x62, 0x63],
+            _bytes: Some(vec![0x61, 0x62, 0x63]),
         };
 
         let t = JsonThreadOut {
@@ -3424,6 +4007,9 @@ mod tests {
                     message_key: "k".to_string(),
                     uid: Some(1),
                     internal_date: Some("2026-01-01T00:00:00Z".to_string()),
+                    flags: vec![],
+                    x_gm_thrid: None,
+                    x_gm_labels: vec![],
                     email: mailbox_parser::ParsedEmail {
                         message_id: Some("mid".to_string()),
                         in_reply_to: None,
@@ -3483,6 +4069,9 @@ mod tests {
                     message_key: "k".to_string(),
                     uid: Some(1),
                     internal_date: None,
+                    flags: vec![],
+                    x_gm_thrid: None,
+                    x_gm_labels: vec![],
                     message_id: Some("mid".to_string()),
                     in_reply_to: None,
                     references: vec![],
@@ -3522,6 +4111,10 @@ mod tests {
                     participant_domain_hints: vec![],
                     forwarded_messages: vec![],
                     forwarded_segments: vec![],
+                    body_text: None,
+                    body_html: None,
+                    body_canonical: None,
+                    raw_headers: None,
                 }],
             },
         }];
@@ -3551,7 +4144,7 @@ mod tests {
             sha256: "deadbeef".to_string(),
             content_id: None,
             content_disposition: Some("attachment".to_string()),
-            bytes: vec![0x61, 0x62, 0x63],
+            _bytes: Some(vec![0x61, 0x62, 0x63]),
         };
 
         let make_addr = |name: &str, address: &str| mailbox_parser::EmailAddress {
@@ -3629,12 +4222,18 @@ mod tests {
                     message_key: "k1".to_string(),
                     uid: Some(1),
                     internal_date: None,
+                    flags: vec![],
+                    x_gm_thrid: None,
+                    x_gm_labels: vec![],
                     email: root,
                 },
                 ParsedThreadMessage {
                     message_key: "k2".to_string(),
                     uid: Some(2),
                     internal_date: None,
+                    flags: vec![],
+                    x_gm_thrid: None,
+                    x_gm_labels: vec![],
                     email: reply,
                 },
             ],
@@ -3660,12 +4259,12 @@ mod tests {
         render_thread_markdown(&mut buf, &t, &attachment_paths).unwrap();
         let got = String::from_utf8(buf).unwrap();
 
-        let expected = "# [Thread - re t1] from Alice <alice@example.com>: Sounds good.\n\nAccount: test\n\nMailboxes: INBOX\n\nSubject: Root Subject\nFrom: Alice <alice@example.com>\nTo: Bob <bob@example.com>\nDate: 2026-01-01T00:00:00Z\nMessage-ID: root1\nUID: 1\n\nSounds good.\n\n### Quoted 1\n\nOn Tue, someone wrote:\n> previous\n\nAttachments:\n- file.txt (text/plain, 3 bytes) [attachments/deadbeef_file.txt]\n\n## from Bob <bob@example.com>: Thanks!\n\nSubject: Re: Root Subject\nFrom: Bob <bob@example.com>\nTo: Alice <alice@example.com>\nDate: 2026-01-01T01:00:00Z\nMessage-ID: reply1\nUID: 2\n\nThanks!\n\n### Quoted 1\n\nOn Tue, someone wrote:\n> previous\n\n";
+        let expected = "---\nkind: email\nthreadId: t1\ntitle: 'Root Subject'\ningested: [k1, k2]\n---\n\n## Alice · 2026-01-01 00:00\n\nHi Bob,\n\nSounds good.\n\n> On Tue, someone wrote:\n> previous\n\n[file.txt](attachments/deadbeef_file.txt)\n\n---\n\n## Bob · 2026-01-01 01:00\n\nThanks!\n\n> On Tue, someone wrote:\n> previous\n\n";
         assert_eq!(got, expected);
     }
 
     #[test]
-    fn markdown_renders_forwarded_blocks_and_labels_thread_fwd() {
+    fn markdown_renders_forwarded_blocks() {
         let email = mailbox_parser::EmailAddress::parse("A <a@example.com>").unwrap();
         let t = JsonThreadCanonicalOut {
             account_id: "acc".to_string(),
@@ -3676,6 +4275,9 @@ mod tests {
                     message_key: "k".to_string(),
                     uid: Some(1),
                     internal_date: None,
+                    flags: vec![],
+                    x_gm_thrid: None,
+                    x_gm_labels: vec![],
                     message_id: None,
                     in_reply_to: None,
                     references: vec![],
@@ -3707,6 +4309,10 @@ mod tests {
                     participant_domain_hints: vec![],
                     forwarded_messages: vec![],
                     forwarded_segments: vec![],
+                    body_text: None,
+                    body_html: None,
+                    body_canonical: None,
+                    raw_headers: None,
                 }],
             },
         };
@@ -3715,13 +4321,12 @@ mod tests {
         let ap = HashMap::new();
         render_thread_markdown(&mut buf, &t, &ap).unwrap();
         let s = String::from_utf8_lossy(&buf);
-        assert!(s.contains("# [Thread - fwd tid]"));
-        assert!(s.contains("### Forwarded 1"));
-        assert!(s.contains("Forwarded content"));
+        assert!(s.contains("threadId: tid"));
+        assert!(s.contains("## Forwarded\n\nForwarded content\n\n"));
     }
 
     #[test]
-    fn markdown_labels_reply_threads_re_when_multiple_messages() {
+    fn markdown_message_boundary_and_ingested_list() {
         fn mk_msg(
             k: &str,
             email: &mailbox_parser::EmailAddress,
@@ -3730,6 +4335,9 @@ mod tests {
                 message_key: k.to_string(),
                 uid: Some(1),
                 internal_date: None,
+                flags: vec![],
+                x_gm_thrid: None,
+                x_gm_labels: vec![],
                 message_id: None,
                 in_reply_to: None,
                 references: vec![],
@@ -3761,6 +4369,10 @@ mod tests {
                 participant_domain_hints: vec![],
                 forwarded_messages: vec![],
                 forwarded_segments: vec![],
+                body_text: None,
+                body_html: None,
+                body_canonical: None,
+                raw_headers: None,
             }
         }
 
@@ -3779,7 +4391,175 @@ mod tests {
         let ap = HashMap::new();
         render_thread_markdown(&mut buf, &t, &ap).unwrap();
         let s = String::from_utf8_lossy(&buf);
-        assert!(s.contains("# [Thread - re tid]"));
+        assert!(s.contains("ingested: [k1, k2]"));
+        assert_eq!(s.matches("## A\n").count(), 2);
+    }
+
+    /// Markdown golden fixtures (plan §6): render(canonical.json) must equal expected.md
+    /// byte-for-byte. The same expected.md files round-trip byte-stable through
+    /// MorphEditor's BlockModel (tests/unit/okf-roundtrip.test.js there).
+    #[test]
+    fn markdown_fixture_goldens() {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../tests/fixtures/okf");
+        for name in [
+            "simple",
+            "quoted-forwarded",
+            "attachments",
+            "sigil-escape",
+            "refinements",
+        ] {
+            let canonical =
+                std::fs::read_to_string(format!("{dir}/{name}.canonical.json")).unwrap();
+            let expected = std::fs::read_to_string(format!("{dir}/{name}.expected.md")).unwrap();
+            let t: JsonThreadCanonicalOut = serde_json::from_str(&canonical).unwrap();
+            let mut buf = Vec::new();
+            render_thread_markdown(&mut buf, &t, &HashMap::new()).unwrap();
+            let got = String::from_utf8(buf).unwrap();
+            assert_eq!(got, expected, "fixture {name} drifted");
+        }
+    }
+
+    /// Escaper grammar — pins byte-parity with MorphEditor's
+    /// escapeParagraphSigils (detectBlockType-mirroring) plus our list-mapping
+    /// deviation (§8.1: unordered list lines pass through bare as real list
+    /// items; ordered stay escaped because MorphEditor renumbers to `1.`).
+    #[test]
+    fn md_escape_line_grammar() {
+        // escaped (would re-detect as another block type)
+        for (in_line, escaped) in [
+            ("# Release 2.0 is out", "\\# Release 2.0 is out"),
+            ("###### deep", "\\###### deep"),
+            ("1. ordered-ish", "1\\. ordered-ish"),
+            ("23. ordered too", "23\\. ordered too"),
+            ("> quote-ish", "\\> quote-ish"),
+            ("---", "\\---"),
+            ("***", "\\***"),
+            ("___", "\\___"),
+            ("  # indented sigil", "  \\# indented sigil"),
+        ] {
+            assert_eq!(md_escape_line(in_line), escaped, "in: {in_line:?}");
+        }
+        // NOT escaped — map to real markdown list items (round-trip as `- ` items;
+        // `*`/`+` markers normalize to `-` because MorphEditor re-emits `- `)
+        for (in_line, mapped) in [
+            ("- bullet-ish", "- bullet-ish"),
+            ("* star-ish", "- star-ish"),
+            ("+ plus-ish", "- plus-ish"),
+            // indent dropped: MorphEditor's list detector is anchored at col 0
+            ("  * indented", "- indented"),
+        ] {
+            assert_eq!(
+                md_map_list_marker(&md_escape_line(in_line)),
+                mapped,
+                "in: {in_line:?}"
+            );
+        }
+        // NOT escaped (grammar doesn't trigger — stays a paragraph on re-parse)
+        for bare in [
+            "#hashtag",
+            "*bold leader*",
+            "**bold**",
+            "| loose pipe |",
+            "`inline code`",
+            "1.no-space",
+            "plain text",
+            "",
+        ] {
+            assert_eq!(md_escape_line(bare), bare, "in: {bare:?}");
+        }
+    }
+
+    /// Real-data §8 follow-up: MorphEditor linkifies bare URLs on parse and
+    /// re-emits `[url](url)` — we emit the canonical form directly.
+    #[test]
+    fn md_linkify_urls_matches_morpheditor_canonical() {
+        assert_eq!(
+            md_linkify_urls("important<https://aka.ms/Learn>"),
+            "important[https://aka.ms/Learn](https://aka.ms/Learn)"
+        );
+        assert_eq!(
+            md_linkify_urls("see http://www.example.co/ now"),
+            "see [http://www.example.co/](http://www.example.co/) now"
+        );
+        // trailing dot is part of the URL — mirrors their regex exactly
+        assert_eq!(
+            md_linkify_urls("visit http://x.com."),
+            "visit [http://x.com.](http://x.com.)"
+        );
+        // explicit links copied verbatim (no double-linkify of the href)
+        assert_eq!(
+            md_linkify_urls("[docs](http://d.com/x) tail"),
+            "[docs](http://d.com/x) tail"
+        );
+        assert_eq!(md_linkify_urls("no urls"), "no urls");
+        // `[imgUrl]<linkUrl>` — HTML `<a><img></a>` conversion shape
+        assert_eq!(
+            md_linkify_urls("[https://x.com/a.jpg]<https://x.com/b>"),
+            "[https://x.com/a.jpg](https://x.com/b)"
+        );
+        // `&[url]` reference-style bracketed url → plain link
+        assert_eq!(
+            md_linkify_urls("see [https://x.com/a.jpg] end"),
+            "see [https://x.com/a.jpg](https://x.com/a.jpg) end"
+        );
+        // `[](url)` empty-text links get the url as text — their parser
+        // refuses empty link text (`closeBracket > i+1` guard)
+        assert_eq!(
+            md_linkify_urls("URL: [](https://demo.x.com/app.svg) tail"),
+            "URL: [https://demo.x.com/app.svg](https://demo.x.com/app.svg) tail"
+        );
+    }
+
+    /// Source emphasis notation canonicalizes to asterisk marks (their
+    /// serializer re-emits `*`/`**`/`***` only); word-boundary rule keeps
+    /// snake_case, urls and emails untouched.
+    #[test]
+    fn md_normalize_emphasis_grammar() {
+        assert_eq!(md_normalize_emphasis("_Assigned to you_"), "*Assigned to you*");
+        assert_eq!(md_normalize_emphasis("__missing__"), "**missing**");
+        assert_eq!(md_normalize_emphasis("___x___"), "***x***");
+        assert_eq!(md_normalize_emphasis("snake_case_id stays"), "snake_case_id stays");
+        assert_eq!(md_normalize_emphasis("no marks"), "no marks");
+    }
+
+    /// §8.3: RE:/FW:/AW:/TR:/Ré: chains strip from the display title.
+    #[test]
+    fn display_title_strips_prefix_chain() {
+        assert_eq!(display_title("RE: AW: Order #1234"), "Order #1234");
+        assert_eq!(display_title("Fwd: Ré: café"), "café");
+        assert_eq!(display_title("TR: fatura"), "fatura");
+        assert_eq!(display_title("plain subject"), "plain subject");
+        // French spacing: `Ré :`
+        assert_eq!(
+            display_title("Ré : FW: Re: RTD specification"),
+            "RTD specification"
+        );
+        // chain wrapping a bracketed ticket tag — tag kept, prefixes not
+        assert_eq!(
+            display_title("AW: Re:[## 349 ##] Re: AW: AW: quote request"),
+            "[## 349 ##] quote request"
+        );
+        // guard: words that merely START with a prefix stay intact
+        assert_eq!(display_title("reply: not a prefix"), "reply: not a prefix");
+        // chain that strips to nothing falls back to the original subject
+        assert_eq!(display_title("RE:"), "RE:");
+    }
+
+    /// §8.4: emitted attachment paths are percent-encoded markdown URLs.
+    #[test]
+    fn md_encode_path_escapes_url_syntax() {
+        assert_eq!(
+            md_encode_path("attachments/abc_Q3 report (draft).pdf"),
+            "attachments/abc_Q3%20report%20%28draft%29.pdf"
+        );
+        assert_eq!(
+            md_encode_path("attachments/caf\u{e9}.png"),
+            "attachments/caf%C3%A9.png"
+        );
+        assert_eq!(
+            md_encode_path("attachments/plain.txt"),
+            "attachments/plain.txt"
+        );
     }
 
     #[test]

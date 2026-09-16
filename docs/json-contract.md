@@ -49,6 +49,10 @@ This document describes the JSON output format from `mailbox-parser-cli --json-p
 | `participant_domain_hints` | `CanonicalDomainHint[]` | All participant domain buckets |
 | `forwarded_messages` | `ParsedForwardedMessage[]` | Parsed forwarded messages |
 | `forwarded_segments` | `ParsedForwardedSegment[]` | Structured forwarded segments |
+| `body_text` | `string?` | Original text/plain body (if available) |
+| `body_html` | `string?` | Original HTML body (when `--keep-body-html` or parsing retained HTML) |
+| `body_canonical` | `string?` | Normalized pre-processed body used by segmentation/reply extraction |
+| `raw_headers` | `object?` | Normalized RFC822 headers as `{name: value}` map (keys lowercased, no duplicate-preservation) |
 
 ## Sub-types
 
@@ -71,7 +75,7 @@ This document describes the JSON output format from `mailbox-parser-cli --json-p
   "sha256": "string",
   "content_id": "string?",
   "content_disposition": "string?",
-  "path": "string?"  // Only when --attachments flag is used
+  "path": "string?"  // Exported/prefetched local asset pointer, emitted when attachment bytes are written
 }
 ```
 
@@ -268,4 +272,7 @@ The `reply_text` field is designed to be chunked:
 
 - `sha256` enables deduplication
 - `mime_type` guides content classification
-- Use `--attachments` flag to export binary data to filesystem (emits `path` field)
+- `content_id` lets consumers rewrite inline `cid:` image references to a local asset
+- Use `--attachments` to export binary data to the filesystem; this emits `path`
+- `path` is a local/export/prefetched asset pointer, not an embedded byte payload or remote URL contract
+- Thumbnails/previews are consumer/cache responsibility; canonical JSON does not embed thumbnail bytes

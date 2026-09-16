@@ -65,7 +65,7 @@ mailbox-parser-cli dir threads --path /path/to/emails --out ./output --format ma
 |--------|-------------|
 | `--format json` | JSON output |
 | `--format jsonl` | JSONL (one thread per line) |
-| `--format markdown` | Markdown output |
+| `--format markdown` | Markdown output — OKF frontmatter + one `## {from} · {date}` block per message (MorphEditor-compatible) |
 | `--format html` | Interactive HTML with graph/table views |
 
 ## JSON profiles
@@ -97,6 +97,10 @@ Toolbar controls ship with built-in labels, and the theme toggle uses embedded m
 | `--attachments` | Include attachment data |
 | `--split-by thread` | Split output per thread |
 | `--owner-email <email>` | Owner email for direction hints (repeatable) |
+| `--keep-body-html` | Retain HTML body in canonical JSON output |
+| `--strip-raw-headers` | Exclude raw_headers from canonical/tree JSON output |
+| `--bodies-dir <dir>` | Write per-message HTML bodies as sidecar files (deprecated, prefer `--keep-body-html`) |
+| `--attachments-dir <dir>` | Write attachment files to directory |
 | `--lifecycle-lexicon <path>` | Custom lifecycle lexicon YAML |
 | `--lifecycle-override-jsonl <path>` | Append-only JSONL lexicon overrides |
 

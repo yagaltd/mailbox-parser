@@ -133,3 +133,15 @@ mailbox-parser-cli typesafe refine --path big.mbox --stride 600 --limit 40 \
 Streaming stride sampling keeps memory flat on multi-GB mboxes. The key is
 never logged; output contains subjects only. Network calls are opt-in: the
 default build has no HTTP client dependency at all.
+
+### `typesafe signals`
+
+One batched TypeSafe call per message carrying the full signal battery
+(15 questions): embed-worthiness (Score), mail_kind (Choice), 8 topic
+labels (Noul, multi-label), sentiment (Score, 4 levels), urgency (Score),
+action_requested (Choice), commitment_made / churn_risk (Noul), language
+(Choice). Output: per-message signals JSONL + summary distributions +
+thread timelines (sentiment/topic evolution computed locally from
+per-message metadata — no extra API calls). For timelines, sample a
+*contiguous* window (`--stride 1` over a sliced mbox); stride sampling
+shreds threads.

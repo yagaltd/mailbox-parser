@@ -1,0 +1,12 @@
+From: Alice Martin <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Lunch on Friday
+Date: Wed, 01 Jan 2026 10:00:00 +0000
+Message-ID: <simple-root@example.com>
+Content-Type: text/plain; charset=utf-8
+
+Hi Bob,
+
+Want to grab lunch on Friday?
+
+Alice

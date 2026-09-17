@@ -1,0 +1,196 @@
+{
+  "account_id": "dir",
+  "mailboxes": [
+    "tests/fixtures/markdown/simple"
+  ],
+  "thread_id": "bd546de543213107",
+  "messages": [
+    {
+      "message_key": "bd546de543213107",
+      "uid": null,
+      "internal_date": "2026-01-01T10:00:00Z",
+      "message_id": "simple-root@example.com",
+      "in_reply_to": null,
+      "references": [],
+      "subject": "Lunch on Friday",
+      "date": "2026-01-01T10:00:00Z",
+      "date_raw": "Wed, 01 Jan 2026 10:00:00 +0000",
+      "from": [
+        {
+          "address": "alice@example.com",
+          "name": "Alice Martin"
+        }
+      ],
+      "to": [
+        {
+          "address": "bob@example.com",
+          "name": "Bob"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "reply_to": [],
+      "reply_text": "Want to grab lunch on Friday?\n\nAlice",
+      "salutation": "Hi Bob,",
+      "contact_hints": [
+        {
+          "name": "Alice Martin",
+          "email": "alice@example.com",
+          "phone": null,
+          "source": "from_header",
+          "role": "from",
+          "confidence": "high",
+          "company_domain": "example.com",
+          "link_key": "alice martin|example.com"
+        },
+        {
+          "name": "Bob",
+          "email": "bob@example.com",
+          "phone": null,
+          "source": "to_header",
+          "role": "to",
+          "confidence": "high",
+          "company_domain": "example.com",
+          "link_key": "bob|example.com"
+        },
+        {
+          "name": "Bob",
+          "email": null,
+          "phone": null,
+          "source": "salutation",
+          "role": "mentioned",
+          "confidence": "low",
+          "link_key": "bob|"
+        }
+      ],
+      "mail_kind_hints": [
+        {
+          "kind": "unknown",
+          "confidence": "low",
+          "signals": [
+            "fallback:no_signal"
+          ],
+          "is_primary": true
+        }
+      ],
+      "sender_domain_hint": {
+        "role": "from",
+        "email": "alice@example.com",
+        "domain": "example.com",
+        "bucket": "company"
+      },
+      "participant_domain_hints": [
+        {
+          "role": "to",
+          "email": "bob@example.com",
+          "domain": "example.com",
+          "bucket": "company"
+        }
+      ],
+      "body_text": "Hi Bob,\n\nWant to grab lunch on Friday?\n\nAlice\n",
+      "body_canonical": "Hi Bob,\n\nWant to grab lunch on Friday?\n\nAlice",
+      "raw_headers": {
+        "content-type": "text/plain; charset=utf-8",
+        "date": "Wed, 01 Jan 2026 10:00:00 +0000",
+        "from": "Alice Martin <alice@example.com>",
+        "message-id": "<simple-root@example.com>",
+        "subject": "Lunch on Friday",
+        "to": "Bob <bob@example.com>"
+      }
+    },
+    {
+      "message_key": "3cb44c2e97301e71",
+      "uid": null,
+      "internal_date": "2026-01-01T11:30:00Z",
+      "message_id": "simple-reply@example.com",
+      "in_reply_to": "simple-root@example.com",
+      "references": [],
+      "subject": "Re: Lunch on Friday",
+      "date": "2026-01-01T11:30:00Z",
+      "date_raw": "Wed, 01 Jan 2026 11:30:00 +0000",
+      "from": [
+        {
+          "address": "bob@example.com",
+          "name": "Bob"
+        }
+      ],
+      "to": [
+        {
+          "address": "alice@example.com",
+          "name": "Alice Martin"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "reply_to": [],
+      "reply_text": "Friday works for me. Noon at the usual place?",
+      "salutation": "Hi Alice,",
+      "contact_hints": [
+        {
+          "name": "Bob",
+          "email": "bob@example.com",
+          "phone": null,
+          "source": "from_header",
+          "role": "from",
+          "confidence": "high",
+          "company_domain": "example.com",
+          "link_key": "bob|example.com"
+        },
+        {
+          "name": "Alice Martin",
+          "email": "alice@example.com",
+          "phone": null,
+          "source": "to_header",
+          "role": "to",
+          "confidence": "high",
+          "company_domain": "example.com",
+          "link_key": "alice martin|example.com"
+        },
+        {
+          "name": "Alice",
+          "email": null,
+          "phone": null,
+          "source": "salutation",
+          "role": "mentioned",
+          "confidence": "low",
+          "link_key": "alice|"
+        }
+      ],
+      "mail_kind_hints": [
+        {
+          "kind": "unknown",
+          "confidence": "low",
+          "signals": [
+            "fallback:no_signal"
+          ],
+          "is_primary": true
+        }
+      ],
+      "sender_domain_hint": {
+        "role": "from",
+        "email": "bob@example.com",
+        "domain": "example.com",
+        "bucket": "company"
+      },
+      "participant_domain_hints": [
+        {
+          "role": "to",
+          "email": "alice@example.com",
+          "domain": "example.com",
+          "bucket": "company"
+        }
+      ],
+      "body_text": "Hi Alice,\n\nFriday works for me. Noon at the usual place?\n",
+      "body_canonical": "Hi Alice,\n\nFriday works for me. Noon at the usual place?",
+      "raw_headers": {
+        "content-type": "text/plain; charset=utf-8",
+        "date": "Wed, 01 Jan 2026 11:30:00 +0000",
+        "from": "Bob <bob@example.com>",
+        "in-reply-to": "<simple-root@example.com>",
+        "message-id": "<simple-reply@example.com>",
+        "subject": "Re: Lunch on Friday",
+        "to": "Alice Martin <alice@example.com>"
+      }
+    }
+  ]
+}

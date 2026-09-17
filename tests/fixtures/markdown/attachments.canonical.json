@@ -1,0 +1,139 @@
+{
+  "account_id": "dir",
+  "mailboxes": [
+    "tests/fixtures/markdown/attachments"
+  ],
+  "thread_id": "127191fc3f16d5ac",
+  "messages": [
+    {
+      "message_key": "127191fc3f16d5ac",
+      "uid": null,
+      "internal_date": "2026-01-02T09:15:00Z",
+      "message_id": "att-root@example.com",
+      "in_reply_to": null,
+      "references": [],
+      "subject": "Photos from the offsite",
+      "date": "2026-01-02T09:15:00Z",
+      "date_raw": "Thu, 02 Jan 2026 09:15:00 +0000",
+      "from": [
+        {
+          "address": "alice@example.com",
+          "name": "Alice Martin"
+        }
+      ],
+      "to": [
+        {
+          "address": "bob@example.com",
+          "name": "Bob"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "reply_to": [],
+      "reply_text": "Here are the photos from the offsite, plus the notes PDF.",
+      "salutation": "Hi Bob,",
+      "attachments": [
+        {
+          "filename": "smile.png",
+          "mime_type": "image/png",
+          "size": 70,
+          "sha256": "c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77",
+          "content_id": null,
+          "content_disposition": "attachment",
+          "path": "attachments/c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77_smile.png"
+        },
+        {
+          "filename": "notes.pdf",
+          "mime_type": "application/pdf",
+          "size": 307,
+          "sha256": "4ea931285f3030ba9f930d0debe18a7363190948f12fd2e90a8f65eeef95c19e",
+          "content_id": null,
+          "content_disposition": "attachment",
+          "path": "attachments/4ea931285f3030ba9f930d0debe18a7363190948f12fd2e90a8f65eeef95c19e_notes.pdf"
+        }
+      ],
+      "contact_hints": [
+        {
+          "name": "Alice Martin",
+          "email": "alice@example.com",
+          "phone": null,
+          "source": "from_header",
+          "role": "from",
+          "confidence": "high",
+          "company_domain": "example.com",
+          "link_key": "alice martin|example.com"
+        },
+        {
+          "name": "Bob",
+          "email": "bob@example.com",
+          "phone": null,
+          "source": "to_header",
+          "role": "to",
+          "confidence": "high",
+          "company_domain": "example.com",
+          "link_key": "bob|example.com"
+        },
+        {
+          "name": "Bob",
+          "email": null,
+          "phone": null,
+          "source": "salutation",
+          "role": "mentioned",
+          "confidence": "low",
+          "link_key": "bob|"
+        }
+      ],
+      "attachment_hints": [
+        {
+          "sha256": "c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77",
+          "is_inline": false,
+          "is_probable_logo": false,
+          "is_tracking_pixel_like": true,
+          "size_bucket": "tiny"
+        },
+        {
+          "sha256": "4ea931285f3030ba9f930d0debe18a7363190948f12fd2e90a8f65eeef95c19e",
+          "is_inline": false,
+          "is_probable_logo": false,
+          "is_tracking_pixel_like": false,
+          "size_bucket": "tiny"
+        }
+      ],
+      "mail_kind_hints": [
+        {
+          "kind": "unknown",
+          "confidence": "low",
+          "signals": [
+            "fallback:no_signal"
+          ],
+          "is_primary": true
+        }
+      ],
+      "sender_domain_hint": {
+        "role": "from",
+        "email": "alice@example.com",
+        "domain": "example.com",
+        "bucket": "company"
+      },
+      "participant_domain_hints": [
+        {
+          "role": "to",
+          "email": "bob@example.com",
+          "domain": "example.com",
+          "bucket": "company"
+        }
+      ],
+      "body_text": "Hi Bob,\n\nHere are the photos from the offsite, plus the notes PDF.\n",
+      "body_canonical": "Hi Bob,\n\nHere are the photos from the offsite, plus the notes PDF.",
+      "raw_headers": {
+        "content-type": "multipart/mixed; boundary=\"BOUND1\"",
+        "date": "Thu, 02 Jan 2026 09:15:00 +0000",
+        "from": "Alice Martin <alice@example.com>",
+        "message-id": "<att-root@example.com>",
+        "mime-version": "1.0",
+        "subject": "Photos from the offsite",
+        "to": "Bob <bob@example.com>"
+      }
+    }
+  ]
+}

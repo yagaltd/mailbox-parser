@@ -1,0 +1,137 @@
+{
+  "account_id": "dir",
+  "mailboxes": [
+    "tests/fixtures/markdown/quoted-forwarded"
+  ],
+  "thread_id": "fb37c65a0e27da23",
+  "messages": [
+    {
+      "message_key": "fb37c65a0e27da23",
+      "uid": null,
+      "internal_date": "2025-10-01T14:03:00Z",
+      "message_id": "qf-root@example.com",
+      "in_reply_to": null,
+      "references": [],
+      "subject": "Q3 planning notes",
+      "date": "2025-10-01T14:03:00Z",
+      "date_raw": "Wed, 01 Oct 2025 14:03:00 +0000",
+      "from": [
+        {
+          "address": "alice@example.com",
+          "name": "Alice Martin"
+        }
+      ],
+      "to": [
+        {
+          "address": "bob@example.com",
+          "name": "Bob"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "reply_to": [],
+      "reply_text": "Here are the notes from the Q3 planning session. The deck Carol sent follows below.",
+      "forwarded_blocks": [
+        "---------- Forwarded message ----------\nFrom: Carol <carol@example.com>\nDate: Tue, 30 Sep 2025 09:00:00 +0000\nSubject: Q3 planning deck\nTo: alice@example.com\n\nTeam, please review the Q3 planning deck before Friday.\n\nOn Mon, Sep 29, 2025 at 4:00 PM Dan <dan@example.com> wrote:\n> Can we move the review to Friday?\n\nBest,\nCarol\n\nThis email and any attachments are confidential and intended solely for the use of the intended recipient."
+      ],
+      "salutation": "Hi Bob,",
+      "contact_hints": [
+        {
+          "name": "Alice Martin",
+          "email": "alice@example.com",
+          "phone": null,
+          "source": "from_header",
+          "role": "from",
+          "confidence": "high",
+          "company_domain": "example.com",
+          "link_key": "alice martin|example.com"
+        },
+        {
+          "name": "Bob",
+          "email": "bob@example.com",
+          "phone": null,
+          "source": "to_header",
+          "role": "to",
+          "confidence": "high",
+          "company_domain": "example.com",
+          "link_key": "bob|example.com"
+        },
+        {
+          "name": "Bob",
+          "email": null,
+          "phone": null,
+          "source": "salutation",
+          "role": "mentioned",
+          "confidence": "low",
+          "link_key": "bob|"
+        }
+      ],
+      "mail_kind_hints": [
+        {
+          "kind": "unknown",
+          "confidence": "low",
+          "signals": [
+            "fallback:no_signal"
+          ],
+          "is_primary": true
+        }
+      ],
+      "sender_domain_hint": {
+        "role": "from",
+        "email": "alice@example.com",
+        "domain": "example.com",
+        "bucket": "company"
+      },
+      "participant_domain_hints": [
+        {
+          "role": "to",
+          "email": "bob@example.com",
+          "domain": "example.com",
+          "bucket": "company"
+        }
+      ],
+      "forwarded_segments": [
+        {
+          "depth": 0,
+          "headers": {
+            "from": [
+              {
+                "address": "carol@example.com",
+                "name": "Carol"
+              }
+            ],
+            "to": [
+              {
+                "address": "alice@example.com"
+              }
+            ],
+            "date": "Tue, 30 Sep 2025 09:00:00 +0000",
+            "subject": "Q3 planning deck",
+            "raw_lines": [
+              "From: Carol <carol@example.com>",
+              "Date: Tue, 30 Sep 2025 09:00:00 +0000",
+              "Subject: Q3 planning deck",
+              "To: alice@example.com"
+            ]
+          },
+          "reply_text": "Team, please review the Q3 planning deck before Friday.",
+          "quoted_blocks": [
+            "On Mon, Sep 29, 2025 at 4:00 PM Dan <dan@example.com> wrote:\n> Can we move the review to Friday?\n\nBest,\nCarol\n\nThis email and any attachments are confidential and intended solely for the use of the intended recipient."
+          ],
+          "parse_confidence": "high",
+          "has_unparsed_tail": false
+        }
+      ],
+      "body_text": "Hi Bob,\n\nHere are the notes from the Q3 planning session. The deck Carol sent follows below.\n\n---------- Forwarded message ----------\nFrom: Carol <carol@example.com>\nDate: Tue, 30 Sep 2025 09:00:00 +0000\nSubject: Q3 planning deck\nTo: alice@example.com\n\nTeam, please review the Q3 planning deck before Friday.\n\nOn Mon, Sep 29, 2025 at 4:00 PM Dan <dan@example.com> wrote:\n> Can we move the review to Friday?\n\nBest,\nCarol\n\nThis email and any attachments are confidential and intended solely for the use of the intended recipient.\n",
+      "body_canonical": "Hi Bob,\n\nHere are the notes from the Q3 planning session. The deck Carol sent follows below.\n\n---------- Forwarded message ----------\nFrom: Carol <carol@example.com>\nDate: Tue, 30 Sep 2025 09:00:00 +0000\nSubject: Q3 planning deck\nTo: alice@example.com\n\nTeam, please review the Q3 planning deck before Friday.\n\nOn Mon, Sep 29, 2025 at 4:00 PM Dan <dan@example.com> wrote:\n> Can we move the review to Friday?\n\nBest,\nCarol\n\nThis email and any attachments are confidential and intended solely for the use of the intended recipient.",
+      "raw_headers": {
+        "content-type": "text/plain; charset=utf-8",
+        "date": "Wed, 01 Oct 2025 14:03:00 +0000",
+        "from": "Alice Martin <alice@example.com>",
+        "message-id": "<qf-root@example.com>",
+        "subject": "Q3 planning notes",
+        "to": "Bob <bob@example.com>"
+      }
+    }
+  ]
+}

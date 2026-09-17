@@ -1,0 +1,28 @@
+From: Maria Silva <maria@example.com>
+To: Bob <bob@example.com>
+Subject: RE: AW: Invoice #4711 questions
+Date: Sat, 04 Jan 2026 09:00:00 +0000
+Message-ID: <refinements-root@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="RB1"
+
+--RB1
+Content-Type: text/plain; charset=utf-8
+
+Hi Bob,
+
+Quick follow-up on the invoice copy, quoted history below.
+
+On Fri, 3 Jan 2026 09:00:00 +0000 Help Desk <help@example.com> wrote:
+> You don't often get email from support@x.com<mailto:support@x.com>. Learn why.
+> Reach the desk at <mailto:help@example.com> anytime.
+> Zak Young <zak@example.com<mailto:zak@example.com>> asked for a copy too.
+
+--RB1
+Content-Type: application/pdf; name="Q3 report (draft).pdf"
+Content-Disposition: attachment; filename="Q3 report (draft).pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQK
+
+--RB1--

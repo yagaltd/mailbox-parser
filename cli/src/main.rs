@@ -1719,7 +1719,7 @@ fn write_markdown_split(
 }
 
 /// Markdown export: OKF frontmatter + MorphEditor-compatible body. Pure view
-/// over the canonical thread; grammar pinned by docs/okf-thread-export-plan.md + goldens.
+/// over the canonical thread; grammar pinned by docs/markdown-thread-export-plan.md + goldens.
 fn render_thread_markdown<W: Write>(
     out: &mut W,
     t: &JsonThreadCanonicalOut,
@@ -2042,7 +2042,7 @@ fn md_escape_line(line: &str) -> String {
 /// Mirrors MorphEditor's detectBlockType (+ fence capture) exactly — escape
 /// ONLY lines that would re-detect as a different block type. No blanket
 /// escaping: loose pipe rows and `*bold*` leaders stay bare (they re-parse
-/// as paragraphs anyway). Byte-parity enforced by tests/fixtures/okf/ goldens.
+/// as paragraphs anyway). Byte-parity enforced by tests/fixtures/markdown/ goldens.
 fn md_line_needs_escape(rest: &str) -> bool {
     // heading: 1-6 '#' then whitespace
     if rest.starts_with('#') {
@@ -4397,10 +4397,10 @@ mod tests {
 
     /// Markdown golden fixtures (plan §6): render(canonical.json) must equal expected.md
     /// byte-for-byte. The same expected.md files round-trip byte-stable through
-    /// MorphEditor's BlockModel (tests/unit/okf-roundtrip.test.js there).
+    /// MorphEditor's BlockModel (tests/unit/markdown-roundtrip.test.js there).
     #[test]
     fn markdown_fixture_goldens() {
-        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../tests/fixtures/okf");
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../tests/fixtures/markdown");
         for name in [
             "simple",
             "quoted-forwarded",

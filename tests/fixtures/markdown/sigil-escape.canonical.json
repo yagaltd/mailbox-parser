@@ -1,0 +1,102 @@
+{
+  "account_id": "dir",
+  "mailboxes": [
+    "tests/fixtures/markdown/sigil-escape"
+  ],
+  "thread_id": "d84a91d502963d7f",
+  "messages": [
+    {
+      "message_key": "d84a91d502963d7f",
+      "uid": null,
+      "internal_date": "2026-01-03T16:45:00Z",
+      "message_id": "sigil-root@example.com",
+      "in_reply_to": null,
+      "references": [],
+      "subject": "Release notes paste",
+      "date": "2026-01-03T16:45:00Z",
+      "date_raw": "Fri, 03 Jan 2026 16:45:00 +0000",
+      "from": [
+        {
+          "address": "bob@example.com",
+          "name": "Bob"
+        }
+      ],
+      "to": [
+        {
+          "address": "alice@example.com",
+          "name": "Alice Martin"
+        }
+      ],
+      "cc": [],
+      "bcc": [],
+      "reply_to": [],
+      "reply_text": "Pasting the changelog verbatim so nothing gets reformatted:\n\n# Release 2.0 is out\n\n- not a bullet list, just how the vendor writes it\n* also not a list\n\n1. not an ordered list either\n\n---\n\n#hashtag and | loose pipes | stay as-is\n\nThat is all.",
+      "salutation": "Hi Alice,",
+      "contact_hints": [
+        {
+          "name": "Bob",
+          "email": "bob@example.com",
+          "phone": null,
+          "source": "from_header",
+          "role": "from",
+          "confidence": "high",
+          "company_domain": "example.com",
+          "link_key": "bob|example.com"
+        },
+        {
+          "name": "Alice Martin",
+          "email": "alice@example.com",
+          "phone": null,
+          "source": "to_header",
+          "role": "to",
+          "confidence": "high",
+          "company_domain": "example.com",
+          "link_key": "alice martin|example.com"
+        },
+        {
+          "name": "Alice",
+          "email": null,
+          "phone": null,
+          "source": "salutation",
+          "role": "mentioned",
+          "confidence": "low",
+          "link_key": "alice|"
+        }
+      ],
+      "mail_kind_hints": [
+        {
+          "kind": "transactional",
+          "confidence": "low",
+          "signals": [
+            "token:order"
+          ],
+          "is_primary": true
+        }
+      ],
+      "sender_domain_hint": {
+        "role": "from",
+        "email": "bob@example.com",
+        "domain": "example.com",
+        "bucket": "company"
+      },
+      "participant_domain_hints": [
+        {
+          "role": "to",
+          "email": "alice@example.com",
+          "domain": "example.com",
+          "bucket": "company"
+        }
+      ],
+      "body_text": "Hi Alice,\n\nPasting the changelog verbatim so nothing gets reformatted:\n\n# Release 2.0 is out\n\n- not a bullet list, just how the vendor writes it\n* also not a list\n\n1. not an ordered list either\n\n---\n\n#hashtag and | loose pipes | stay as-is\n\nThat is all.\n",
+      "body_canonical": "Hi Alice,\n\nPasting the changelog verbatim so nothing gets reformatted:\n\n# Release 2.0 is out\n\n- not a bullet list, just how the vendor writes it\n* also not a list\n\n1. not an ordered list either\n\n---\n\n#hashtag and | loose pipes | stay as-is\n\nThat is all.",
+      "raw_headers": {
+        "content-type": "text/plain; charset=utf-8",
+        "date": "Fri, 03 Jan 2026 16:45:00 +0000",
+        "from": "Bob <bob@example.com>",
+        "message-id": "<sigil-root@example.com>",
+        "subject": "Release notes paste",
+        "to": "Alice Martin <alice@example.com>"
+      }
+    }
+  ]
+}

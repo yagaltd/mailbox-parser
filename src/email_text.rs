@@ -456,8 +456,14 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
     const SIGNATURE_CUES: &[&str] = &[
         // English
         "best regards",
+        "warmest regards",
         "kind regards",
         "kindest regards",
+        "my kindest regards",
+        "all the best",
+        "wishing you all the best",
+        "with much love and gratitude",
+        "see you on screen",
         "regards",
         "regards,",
         "rgds",
@@ -920,6 +926,7 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
             "a+",
             "cheers",
             "cdlt",
+            "warmly",
         ];
         SIGNATURE_CUES.iter().any(|c| {
             if STRICT_SIGNOFF_CUES.iter().any(|s| s == c) {
@@ -1202,7 +1209,19 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
             signature_pos = Some(pos);
             break;
         }
-        if score >= 4 && strong_evidence && fallback_signature_pos.is_none() {
+        // The no-cue fallback must not fire on contact-rich body text
+        // (URL/email lists in instructions — probe round 8): require the
+        // line itself to carry sign-off evidence.
+        let line_is_signoff = t == "--"
+            || t == "-- "
+            || MOBILE_SIGNATURE_CUES.iter().any(|c| core.starts_with(c))
+            || is_signature_cue_line(&core)
+            || has_inline_signoff;
+        if score >= 4
+            && strong_evidence
+            && line_is_signoff
+            && fallback_signature_pos.is_none()
+        {
             fallback_signature_pos = Some(pos);
         }
     }

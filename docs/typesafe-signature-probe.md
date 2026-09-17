@@ -15,7 +15,11 @@ reply text; probe = first 40).
 | 1 | 40 msgs, gmail (automated-heavy) | 42% | baseline; 20 parser-only |
 | 2 | same 40, after fixes | 72% | bucket A gated, attribution fixed |
 | 3 | 68 msgs, 4 mboxes (human-heavy) | 71% | fixes hold on fresh corpus |
-| 4 | same 68, after lexicon round | **76%** | distilled cues applied |
+| 4 | same 68, after lexicon round | 76% | distilled cues applied |
+| 5 | fresh strides, 4 mboxes (176 judged) | gmail 75 / fitch 73 / **FWM 45** | FWM teacher-only 26/57 |
+| 6 | +English cues, team rule v1 | FWM 61 | fallback re-split bug |
+| 7 | +fallback suppression | fitch 91 | team rule regressed Mira |
+| 8 | team rule v2 + footer-token guard + no-cue fallback guard | **FWM 68 / fitch 92 / gmail 82** | garbage signatures eliminated |
 
 | Bucket | Count | Meaning |
 |---|---|---|
@@ -112,9 +116,19 @@ python3 tools/typesafe_signature_probe.py /tmp/probe.jsonl --limit 40
 2. **Automated-mail signature gate** (`src/canonical.rs::is_automated_mail`):
    List-Unsubscribe / Auto-Submitted≠no / Precedence bulk,list,junk / noreply-family
    sender → signature blocks demote to body (round-1 bucket A: 16/20).
-3. **Lexicon entries from rounds 3–4**: `kindest regards`, `bises` (French
-   informal), `début du message transmis/transféré` (French forward markers),
-   gate `notification` (singular).
+3. **Team sign-off demotion** (`is_team_signoff`, rounds 5–8): an org line
+   ("The Kajabi Team") directly after a comma-terminated sign-off, or opening
+   the block, is a template sign-off — demoted. A person name between greeting
+   and team line ("Warmly, / David / The Flow with Mira Team") keeps the
+   signature. Demotion suppresses the footer-fallback re-split.
+4. **Footer-fallback guards** (round 8): URL-only tails no longer qualify as
+   signatures (needs ≥1 real footer token); the block engine's no-cue
+   fallback requires the line itself to carry sign-off evidence (killed the
+   URL/email instruction-list false positive).
+5. **Lexicon entries**: `kindest regards`, `warmest regards`, `all the best`,
+   `wishing you all the best`, `with much love and gratitude`, `see you on
+   screen`, `warmly` (strict), `bises`, French forward markers
+   (`début du message transmis/transféré`), `notification` gate pattern.
 
 Tests: `tests/parse_basic.rs` (wrapped attribution, date-first, prose guard),
 `tests/canonical_json.rs` (automated gate). All suites green.

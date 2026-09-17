@@ -198,6 +198,47 @@ fn is_automated_mail(email: &ParsedEmail) -> bool {
     AUTOMATED_LOCALPARTS.iter().any(|p| local.contains(p))
 }
 
+/// A team sign-off names an organization, not a person: a line like
+/// "The Kajabi Team" that DIRECTLY follows a comma-terminated sign-off
+/// ("Talk soon,"). If a person's name sits between the sign-off and the
+/// team line ("Warmly, / David / The Flow with Mira Team"), the signature
+/// is personal and must be kept (probe round 7 regression).
+fn is_team_signoff(text: &str) -> bool {
+    let lines: Vec<&str> = text.lines().map(str::trim).collect();
+    for (i, l) in lines.iter().enumerate() {
+        let lower = l.to_ascii_lowercase();
+        let body = lower.strip_prefix("the ").unwrap_or(&lower);
+        let is_team_line = body.len() >= 8
+            && body.ends_with(" team")
+            && body[..body.len() - 5]
+                .chars()
+                .all(|c| c.is_alphanumeric() || matches!(c, ' ' | '.' | '&' | '\'' | '’' | '-'));
+        if !is_team_line {
+            continue;
+        }
+        // Case 1: the team line is the first non-blank line of the block —
+        // nothing personal inside (the greeting may sit just before the
+        // block boundary).
+        let first_nonblank = lines.iter().position(|l| !l.is_empty());
+        if first_nonblank == Some(i) {
+            return true;
+        }
+        // Case 2: previous non-blank line is the sign-off greeting itself
+        // (comma-terminated, short, no contact markers)
+        if let Some(prev) = lines[..i].iter().rev().find(|l| !l.is_empty()) {
+            let looks_like_greeting = prev.len() <= 30
+                && (prev.ends_with(',') || prev.ends_with(':'))
+                && !prev.contains('@')
+                && !prev.contains("http")
+                && !prev.chars().any(|c| c.is_ascii_digit());
+            if looks_like_greeting {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 fn canonicalize_email_message(
     message_key: String,
     uid: Option<u32>,
@@ -208,6 +249,10 @@ fn canonicalize_email_message(
     email: &ParsedEmail,
 ) -> CanonicalMessage {
     let mut blocks = segment_email_body(&email.body_canonical);
+    // A signature the engine found but we deliberately rejected (team
+    // sign-off). Suppresses the footer-fallback re-split: it would otherwise
+    // grab the demoted template tail as a "signature" (probe round 6).
+    let mut demoted_signature = false;
     // Automated mail (alerts, receipts, digests) carries no personal signature:
     // its trailing contact/URL blocks are template boilerplate. Demote detected
     // signatures to body so the text stays in reply_text. TypeSafe probe round 1
@@ -217,6 +262,23 @@ fn canonicalize_email_message(
         for b in blocks.iter_mut() {
             if b.kind == EmailBlockKind::Signature {
                 b.kind = EmailBlockKind::Reply;
+            }
+        }
+    } else {
+        // Team sign-off demotion: "Talk soon, / The Kajabi Team", "Kind
+        // regards, / The VidApp Team" — an organization signing a template,
+        // not a person. TypeSafe probe: teacher rejects these as personal
+        // signatures even when no automation headers exist (support@ senders).
+        for b in blocks.iter_mut() {
+            if b.kind == EmailBlockKind::Signature {
+                let is_team = email
+                    .body_canonical
+                    .get(b.byte_start..b.byte_end)
+                    .is_some_and(is_team_signoff);
+                if is_team {
+                    b.kind = EmailBlockKind::Reply;
+                    demoted_signature = true;
+                }
             }
         }
     }
@@ -283,7 +345,7 @@ fn canonicalize_email_message(
             EmailBlockKind::Reply => {}
         }
     }
-    if signature.is_none() && !automated {
+    if signature.is_none() && !automated && !demoted_signature {
         if let Some((trimmed_reply, footer_signature)) = split_signature_footer_fallback(&reply) {
             reply = trimmed_reply;
             // Cap fallback signature at 300 chars
@@ -549,6 +611,16 @@ fn split_signature_footer_fallback(reply: &str) -> Option<(String, String)> {
         }
         let score: usize = tail.iter().map(|l| marker_score(l)).sum();
         if score < 2 {
+            continue;
+        }
+        // URLs alone must not qualify a tail — at least one real footer
+        // token is required (probe round 8: an app-instructions list with a
+        // link was split off as a "signature").
+        let has_footer_token = tail.iter().any(|l| marker_score(l) > 1 || {
+            let lower = l.to_ascii_lowercase();
+            footer_markers.iter().any(|m| lower.contains(m))
+        });
+        if !has_footer_token {
             continue;
         }
         let head = lines[..i].join("\n").trim().to_string();

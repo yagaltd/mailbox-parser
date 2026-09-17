@@ -34,6 +34,46 @@ fn canonical_automated_mail_has_no_signature() {
     );
 }
 
+/// Team sign-off: an organization signing a template ("Talk soon, /
+/// The Kajabi Team") is not a personal signature — but a person name between
+/// the greeting and the team line ("Warmly, / David / The Flow with Mira
+/// Team") IS one and must be kept. No automation headers exist on these
+/// senders, so the header gate cannot catch them.
+#[test]
+fn canonical_team_signoff_demoted_but_personal_kept() {
+    let mk = |body: &str| {
+        let raw = format!(
+            "From: Kajabi Support <support@platform.example.com>\nTo: A <a@example.org>\nSubject: New comment\nDate: Tue, 20 Jan 2026 12:34:56 +0000\nContent-Type: text/plain\n\n{body}"
+        );
+        let parsed =
+            parse_rfc822_with_options(raw.as_bytes(), &ParseRfc822Options::default()).expect("parse");
+        let messages = vec![MailMessage {
+            uid: None,
+            internal_date: parsed.date.clone(),
+            flags: vec![],
+            parsed,
+            raw: vec![],
+        }];
+        let threads = thread_messages_from_mail_messages(&messages);
+        canonicalize_threads(&threads).pop().unwrap().messages.pop().unwrap()
+    };
+
+    // Team line directly after the greeting → demoted.
+    let team = mk("A new comment was posted on your product.\n\nWe'd encourage following up with your customer.\n\nTalk soon,\nThe Kajabi Team\n\nContact Kajabi Support\n( https://help.example.com/x ) |\nOfficial Help Site ( https://help.example.com )\n");
+    assert!(
+        team.signature.is_none(),
+        "team sign-off must be demoted, got: {:?}",
+        team.signature
+    );
+    assert!(team.reply_text.contains("The Kajabi Team"));
+
+    // Person name between greeting and team line → personal, kept.
+    let personal = mk("Please let me know if you have any trouble with the reset process.\n\nWelcome to the family!\n\nWarmly,\nDavid\n\nThe Flow with Mira Team\n");
+    let sig = personal.signature.as_deref().unwrap_or("");
+    assert!(sig.contains('David'), "personal signature kept, got: {sig:?}");
+    assert!(!personal.reply_text.contains("Warmly,"));
+}
+
 /// Verify all four new canonical fields are populated from a basic .eml fixture.
 #[test]
 fn canonical_message_passes_body_and_headers() {

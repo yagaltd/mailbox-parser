@@ -4,6 +4,9 @@ use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+#[cfg(feature = "typesafe")]
+mod typesafe;
+
 use anyhow::{Context, Result, anyhow};
 use clap::{Parser, Subcommand, ValueEnum};
 use mailbox_parser::{
@@ -89,6 +92,8 @@ enum Command {
     Mbox(MboxArgs),
     /// Process a directory of .eml and .mbox files.
     Dir(DirArgs),
+    #[cfg(feature = "typesafe")]
+    Typesafe(typesafe::TypesafeArgs),
 }
 
 #[derive(Clone, Debug, Parser)]
@@ -383,6 +388,8 @@ fn main() -> Result<()> {
         Command::Imap(imap) => run_imap(imap),
         Command::Mbox(mbox) => run_mbox(mbox),
         Command::Dir(dir) => run_dir(dir),
+        #[cfg(feature = "typesafe")]
+        Command::Typesafe(args) => typesafe::run(args),
     }
 }
 

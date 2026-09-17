@@ -114,3 +114,22 @@ mailbox-parser-cli dir threads --help
 ```
 
 For format-specific behavior and parser hints, see the [library README](../README.md).
+
+## Optional: TypeSafe AI refinement (`typesafe` feature)
+
+Build with `--features typesafe` to add `typesafe refine` — a teacher-vs-parser
+diff over your own mail that reports where the signature split disagrees with
+a TypeSafe (Jev) judgment, plus a mail-kind taxonomy per message. Useful to
+find segmentation gaps on your own corpora; findings feed rule fixes (see
+`docs/typesafe-signature-probe.md`).
+
+```bash
+cargo build --release --manifest-path cli/Cargo.toml --features typesafe
+# key: chmod 600 file containing the key (or export TYPESAFEAI_API_KEY)
+mailbox-parser-cli typesafe refine --path big.mbox --stride 600 --limit 40 \
+  --key-file /tmp/typesafe.key --out /tmp/verdicts.jsonl
+```
+
+Streaming stride sampling keeps memory flat on multi-GB mboxes. The key is
+never logged; output contains subjects only. Network calls are opt-in: the
+default build has no HTTP client dependency at all.

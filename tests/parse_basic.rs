@@ -41,6 +41,56 @@ fn parse_forward_and_attachment() {
 }
 
 #[test]
+fn wrapped_attribution_is_quote_not_signature() {
+    // Gmail wraps long attributions; the address lands on the next line.
+    // Probe round 1, bucket B (ThemeForest msg): the unwritten suffix made both
+    // lines invisible to quote detection, so the reply line "Anyway, ..." was
+    // scored as a signature start (the address counted as a contact marker).
+    let raw = b"From: Andrei <andrei@example.com>\nTo: Aurelien <a@example.org>\nSubject: Re: item\nDate: Fri, 20 Apr 2018 14:01:00 +0000\nContent-Type: text/plain\n\nHi.\n\nI fixed all points that you noted.\n\nAnyway, we can try something.\n\nOn Fri, Apr 20, 2018 at 2:01 PM, Aurelien A <\naurelien@example.net> wrote:\n> Hi Andrei,\n>\n> Could you inform me?\n";
+    let parsed = parse_rfc822(raw).expect("parse");
+    let blocks = segment_email_body(&parsed.body_canonical);
+    let sig = blocks
+        .iter()
+        .find(|b| b.kind == EmailBlockKind::Signature)
+        .map(|b| parsed.body_canonical.get(b.byte_start..b.byte_end).unwrap_or(""));
+    assert!(sig.is_none(), "wrapped attribution must not seed a signature: {sig:?}");
+    let reply = reply_text(&parsed.body_canonical, &blocks);
+    assert!(reply.contains("Anyway, we can try something."));
+    assert!(!reply.contains("wrote:"));
+}
+
+#[test]
+fn date_first_attribution_is_quote_not_signature() {
+    // Date-first Gmail attribution (common in non-English locales), wrapped:
+    // "2015-10-19 11:21 GMT+07:00 Name <\naddr@x>:". Probe round 1, bucket B
+    // (Gelato msg): unrecognized, so the "cheers," cue swallowed it.
+    let raw = b"From: Aurelien <a@example.org>\nTo: Bob <bob@example.com>\nSubject: Re: Gelato List\nDate: Mon, 19 Oct 2015 11:21:00 +0700\nContent-Type: text/plain\n\nok tu peux commencer avec:\n\n- Paulaner\n- Kempinsky Hotel\n\ncheers,\n\n2015-10-19 11:21 GMT+07:00 Aurelien A <\naurelien@example.net>:\n\n> Hello,\n>\n> Voici la liste\n";
+    let parsed = parse_rfc822(raw).expect("parse");
+    let blocks = segment_email_body(&parsed.body_canonical);
+    let sig: String = blocks
+        .iter()
+        .filter(|b| b.kind == EmailBlockKind::Signature)
+        .map(|b| parsed.body_canonical.get(b.byte_start..b.byte_end).unwrap_or(""))
+        .collect();
+    assert!(!sig.contains('@'), "attribution must not leak into signature: {sig:?}");
+    assert!(!sig.contains("2015-10-19"), "attribution must not leak into signature: {sig:?}");
+    let reply = reply_text(&parsed.body_canonical, &blocks);
+    assert!(reply.contains("cheers,"));
+    assert!(!reply.contains("2015-10-19"));
+}
+
+#[test]
+fn wrapped_attribution_is_quote_not_signature_prose_guard() {
+    // The "ends with '<'" wrapped-attribution rule must not eat prose:
+    // a body line ending in '<' without a year is not an attribution.
+    let raw = b"From: A <a@example.org>\nTo: B <b@example.com>\nSubject: stuff\nDate: Tue, 20 Jan 2026 12:34:56 +0000\nContent-Type: text/plain\n\nWe measured it as less than\nthe threshold <\n\nBest regards,\nA\n";
+    let parsed = parse_rfc822(raw).expect("parse");
+    let blocks = segment_email_body(&parsed.body_canonical);
+    let reply = reply_text(&parsed.body_canonical, &blocks);
+    assert!(reply.contains("the threshold"), "prose must stay in the reply");
+}
+
+#[test]
 fn parse_reply_strips_quoted_history() {
     let bytes = fixture("tests/fixtures/with_quote.eml");
     let parsed = parse_rfc822(&bytes).expect("parse");

@@ -6,6 +6,34 @@ use mailbox_parser::{
     thread_messages_from_mail_messages,
 };
 
+/// Automated mail must not produce a `signature` field: its trailing blocks
+/// are template boilerplate (probe round 1, bucket A — LinkedIn blurbs, bank
+/// footers). The text stays in reply_text.
+#[test]
+fn canonical_automated_mail_has_no_signature() {
+    let raw = b"From: Job Alerts <jobalerts-noreply@linkedin.example.com>\nTo: A <a@example.org>\nSubject: Your job alert\nDate: Tue, 20 Jan 2026 12:34:56 +0000\nList-Unsubscribe: <https://example.com/unsub>\nContent-Type: text/plain\n\nYour job alert for chief operating officer in Jakarta\n\nHead of Stunting Program and Operations\nEdufarmers International\nJakarta\n\nThis company is actively hiring\nApply with resume & profile\nView job: https://www.example.com/jobs/view/4XG2552\n";
+    let parsed = parse_rfc822_with_options(raw, &ParseRfc822Options::default()).expect("parse");
+    let messages = vec![MailMessage {
+        uid: None,
+        internal_date: parsed.date.clone(),
+        flags: vec![],
+        parsed,
+        raw: vec![],
+    }];
+    let threads = thread_messages_from_mail_messages(&messages);
+    let canonical = canonicalize_threads(&threads);
+    let msg = &canonical[0].messages[0];
+    assert!(
+        msg.signature.is_none(),
+        "automated mail must not yield a signature, got: {:?}",
+        msg.signature
+    );
+    assert!(
+        msg.reply_text.contains("Edufarmers International"),
+        "demoted signature text must stay in reply_text"
+    );
+}
+
 /// Verify all four new canonical fields are populated from a basic .eml fixture.
 #[test]
 fn canonical_message_passes_body_and_headers() {

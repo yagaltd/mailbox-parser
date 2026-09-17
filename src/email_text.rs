@@ -342,6 +342,8 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
         "messaggio inoltrato",
         "bericht doorgestuurd",
         "wiadomość dalej",
+        "début du message transmis",
+        "début du message transféré",
     ];
     const QUOTE_SEPARATORS: &[&str] = &[
         "-----original message-----",
@@ -455,6 +457,7 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
         // English
         "best regards",
         "kind regards",
+        "kindest regards",
         "regards",
         "regards,",
         "rgds",
@@ -473,6 +476,7 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
         // French
         "merci",
         "merci beaucoup",
+        "bises",
         "cordialement",
         "bien cordialement",
         "bien à vous",
@@ -631,6 +635,28 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
         let ends_like_wrote = WROTE_TOKENS
             .iter()
             .any(|w| tl.ends_with(':') || tl.ends_with(w));
+        // Gmail wraps long attribution lines: the address lands on the NEXT
+        // line ("On Fri, Apr 20, 2018 at 2:01 PM, Name <\naddr@x> wrote:"), and
+        // some locales put the date first ("2015-10-19 11:21 GMT+07:00 Name <").
+        // Neither carries the ':'/'wrote' suffix on its first line, so both
+        // escaped detection and bled attribution into reply/signature.
+        let starts_with_iso_datetime = |tl: &str| -> bool {
+            let b = tl.as_bytes();
+            b.len() >= 16
+                && b[0..4].iter().all(|c| c.is_ascii_digit())
+                && b[4] == b'-'
+                && b[5..7].iter().all(|c| c.is_ascii_digit())
+                && b[7] == b'-'
+                && b[8..10].iter().all(|c| c.is_ascii_digit())
+                && b[10] == b' '
+                && b[11..13].iter().all(|c| c.is_ascii_digit())
+                && b[13] == b':'
+                && b[14..16].iter().all(|c| c.is_ascii_digit())
+        };
+        let contains_year = tl
+            .as_bytes()
+            .windows(4)
+            .any(|w| (w[0] == b'1' || w[0] == b'2') && w[1..4].iter().all(|c| c.is_ascii_digit()));
         starts_with_any(&tl, QUOTE_SEPARATORS)
             || (tl.starts_with("on ")
                 && ends_like_wrote
@@ -638,6 +664,17 @@ pub fn segment_email_body(text: &str) -> Vec<EmailBlock> {
             || (locale_on_prefix.iter().any(|p| tl.starts_with(p))
                 && ends_like_wrote
                 && WROTE_TOKENS.iter().any(|w| tl.contains(w)))
+            // Wrapped attribution, first line: ends with '<' because the
+            // address continues on the next line. Year guard keeps prose out.
+            || (tl.ends_with('<')
+                && contains_year
+                && (starts_with_iso_datetime(&tl)
+                    || locale_on_prefix.iter().any(|p| tl.starts_with(p))))
+            // Attribution continuation line: "addr@example.com> wrote:" / "addr@x>:"
+            || ((tl.ends_with(">:") || tl.ends_with("> wrote:") || tl.ends_with(">wrote:"))
+                && has_email_like(&tl))
+            // Date-first attribution on a single line: "2015-10-19 11:21 GMT+07:00 Name <a@b>:"
+            || (starts_with_iso_datetime(&tl) && tl.ends_with(':') && tl.contains('@'))
             || tl_header.starts_with("from:") && tl_header.contains("sent:")
     };
     let is_header_key_line = |t: &str| starts_with_any(&line_core_header(t), HEADER_KEYS);

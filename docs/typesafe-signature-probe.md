@@ -1,6 +1,6 @@
-# TypeSafe signature-split probe — round 1 findings
+# TypeSafe signature-split probe — rounds 1–4
 
-Branch: `typesafe/signature-probe` · date: 2026-09-17 · 40 messages, 0 API errors.
+Branch: `typesafe/signature-probe` · date: 2026-09-17 · teacher: `jev-latest`.
 
 First run of the teacher-vs-parser diff loop: TypeSafe (`jev-latest`) judges the
 signature boundary on the same text the parser segmented; disagreements become
@@ -10,8 +10,12 @@ reply text; probe = first 40).
 
 ## Headline
 
-**Agreement 17/40 (42%).** Failure mode is one-directional: the parser invents
-signatures; it almost never misses real ones (2 teacher-only).
+| Round | Sample | Agreement | Notes |
+|---|---|---|---|
+| 1 | 40 msgs, gmail (automated-heavy) | 42% | baseline; 20 parser-only |
+| 2 | same 40, after fixes | 72% | bucket A gated, attribution fixed |
+| 3 | 68 msgs, 4 mboxes (human-heavy) | 71% | fixes hold on fresh corpus |
+| 4 | same 68, after lexicon round | **76%** | distilled cues applied |
 
 | Bucket | Count | Meaning |
 |---|---|---|
@@ -63,7 +67,25 @@ do not distill without deciding.
 Both low/near confidence (0.69) — exactly the answers the loop should re-verify
 (self-consistency or reasoning pass) before treating as parser bugs.
 
-## Costs & mechanics
+## Open residual (round 4)
+
+- **Policy C, machine sign-offs in human shape** (`Thank you, / Bank CIMB
+  Niaga`, `Sincerely, / UptimeRobot`): teacher says none, parser keeps them on
+  non-gated custom-domain senders. Decision pending — treat as sender-identity
+  noise or legitimate signatures.
+- Custom-domain transactional footers (Indonesian e-commerce) from senders
+  outside the noreply family: bounded set; extend gate by domain evidence only
+  if it matters downstream.
+- Teacher variance zone: several disagreements flipped between rounds at
+  confidence <0.7 — the loop's verify step (re-ask or reasoning pass) before
+  distilling any single low-confidence disagreement.
+
+## Mechanism answer (from review)
+
+Hardcoded consts + tests remain the refinement mechanism for this repo:
+contributors compile anyway, goldens pin behavior, diffs are reviewable Rust.
+External JSON lexicons earn their keep only when non-developer users refine
+rules without a build step (agent-mailbox/Rhai pattern).
 
 One call per message, two questions batched (`signature_start` Choice over the
 last 35 line indices + `mail_kind`) — 40 calls, sub-minute wall time, no
@@ -79,8 +101,20 @@ cli/target/release/mailbox-parser-cli mbox threads --path /tmp/probe.mbox \
 python3 tools/typesafe_signature_probe.py /tmp/probe.jsonl --limit 40
 ```
 
-## Next round
+## Fixes distilled and shipped on this branch
 
-1. Decide C (machine sign-offs count as signatures or not) — one criteria line.
-2. Distill bucket A into the first `suppress_signature_when` rules.
-3. Bucket B needs a structural guard in Rust (Tier 3), not a lexicon entry.
+1. **Wrapped/date-first attribution recognition** (`src/email_text.rs`):
+   Gmail wraps long attributions so the address lands on the next line
+   (`On Fri, Apr 20, 2018 … Name <\naddr@x> wrote:`); some locales put the date
+   first (`2015-10-19 11:21 GMT+07:00 Name <`). Neither carried the `:`/`wrote`
+   suffix on its first line, so both escaped quote detection — attribution bled
+   into reply/signature (round-1 bucket B, msgs #28/#37).
+2. **Automated-mail signature gate** (`src/canonical.rs::is_automated_mail`):
+   List-Unsubscribe / Auto-Submitted≠no / Precedence bulk,list,junk / noreply-family
+   sender → signature blocks demote to body (round-1 bucket A: 16/20).
+3. **Lexicon entries from rounds 3–4**: `kindest regards`, `bises` (French
+   informal), `début du message transmis/transféré` (French forward markers),
+   gate `notification` (singular).
+
+Tests: `tests/parse_basic.rs` (wrapped attribution, date-first, prose guard),
+`tests/canonical_json.rs` (automated gate). All suites green.

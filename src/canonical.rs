@@ -152,6 +152,52 @@ fn canonicalize_thread_message(m: &ParsedThreadMessage) -> CanonicalMessage {
     )
 }
 
+/// Heuristic gate: machine-generated mail has no personal signature — its
+/// trailing contact/URL blocks are template boilerplate, not a sign-off.
+/// TypeSafe probe round 1 (docs/typesafe-signature-probe.md): 16/20 false
+/// signatures came from automated senders (job alerts, receipts, footers).
+fn is_automated_mail(email: &ParsedEmail) -> bool {
+    let h = &email.raw_headers;
+    if h.contains_key("list-unsubscribe") {
+        return true;
+    }
+    if let Some(v) = h.get("auto-submitted") {
+        if !v.trim().eq_ignore_ascii_case("no") {
+            return true;
+        }
+    }
+    if let Some(v) = h.get("precedence") {
+        let v = v.trim().to_ascii_lowercase();
+        if v == "bulk" || v == "list" || v == "junk" {
+            return true;
+        }
+    }
+    let local = email
+        .from
+        .first()
+        .map(|a| {
+            a.address
+                .split('@')
+                .next()
+                .unwrap_or("")
+                .to_ascii_lowercase()
+        })
+        .unwrap_or_default();
+    const AUTOMATED_LOCALPARTS: &[&str] = &[
+        "noreply",
+        "no-reply",
+        "no_reply",
+        "donotreply",
+        "do-not-reply",
+        "mailer-daemon",
+        "mailrobot",
+        "postmaster",
+        "notification",
+        "newsletter",
+    ];
+    AUTOMATED_LOCALPARTS.iter().any(|p| local.contains(p))
+}
+
 fn canonicalize_email_message(
     message_key: String,
     uid: Option<u32>,
@@ -161,7 +207,19 @@ fn canonicalize_email_message(
     x_gm_labels: Vec<String>,
     email: &ParsedEmail,
 ) -> CanonicalMessage {
-    let blocks = segment_email_body(&email.body_canonical);
+    let mut blocks = segment_email_body(&email.body_canonical);
+    // Automated mail (alerts, receipts, digests) carries no personal signature:
+    // its trailing contact/URL blocks are template boilerplate. Demote detected
+    // signatures to body so the text stays in reply_text. TypeSafe probe round 1
+    // (docs/typesafe-signature-probe.md): 16/20 false signatures were this shape.
+    let automated = is_automated_mail(email);
+    if automated {
+        for b in blocks.iter_mut() {
+            if b.kind == EmailBlockKind::Signature {
+                b.kind = EmailBlockKind::Reply;
+            }
+        }
+    }
     let mut reply = reply_text(&email.body_canonical, &blocks);
 
     let mut quoted_blocks = Vec::new();
@@ -225,7 +283,7 @@ fn canonicalize_email_message(
             EmailBlockKind::Reply => {}
         }
     }
-    if signature.is_none() {
+    if signature.is_none() && !automated {
         if let Some((trimmed_reply, footer_signature)) = split_signature_footer_fallback(&reply) {
             reply = trimmed_reply;
             // Cap fallback signature at 300 chars

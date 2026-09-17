@@ -4580,7 +4580,7 @@ mod tests {
 
     #[test]
     fn canonical_includes_sender_and_participant_domain_hints() {
-        let raw = b"From: Alice <alice@gmail.com>\r\nTo: Bob <bob@acme-corp.com>\r\nCc: Carol <carol@yahoo.com>\r\nSubject: Domain hints\r\nDate: Tue, 11 Feb 2025 10:00:00 +0000\r\nMessage-ID: <hints@example.com>\r\n\r\nHello\r\n";
+        let raw = b"From: Alice <alice@example.com>\r\nTo: Bob <bob@example.org>\r\nCc: Carol <carol@example.net>\r\nSubject: Domain hints\r\nDate: Tue, 11 Feb 2025 10:00:00 +0000\r\nMessage-ID: <hints@example.com>\r\n\r\nHello\r\n";
         let parsed = parse_rfc822(raw).expect("parse");
         let threads = thread_messages_from_mail_messages(&[MailMessage {
             uid: None,
@@ -4595,20 +4595,20 @@ mod tests {
             .sender_domain_hint
             .as_ref()
             .expect("sender domain hint must exist");
-        assert_eq!(sender.domain, "gmail.com");
+        assert_eq!(sender.domain, "example.com");
         assert_eq!(
             serde_json::to_value(&sender.bucket).unwrap(),
-            serde_json::json!("personal")
+            serde_json::json!("company")
         );
         assert!(
             msg.participant_domain_hints
                 .iter()
-                .any(|h| h.domain == "acme-corp.com")
+                .any(|h| h.domain == "example.org")
         );
         assert!(
             msg.participant_domain_hints
                 .iter()
-                .any(|h| h.domain == "yahoo.com")
+                .any(|h| h.domain == "example.net")
         );
     }
 }

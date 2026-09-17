@@ -420,7 +420,7 @@ fn read_prop_time_string(
 }
 
 fn filetime_to_rfc3339(filetime: i64) -> String {
-    let unix_secs = (filetime / 10_000_000) - 11644473600_i64;
+    let unix_secs = (filetime / 10_000_000) - 11_644_473_600_i64;
     match chrono::DateTime::from_timestamp(unix_secs, 0) {
         Some(dt) => dt.to_rfc3339(),
         None => format!("FILETIME({filetime})"),

@@ -313,6 +313,19 @@ fn refine(args: RefineArgs) -> Result<()> {
         println!(
             "  {i:3} {bucket:16} parser={parser_boundary:?} teacher={t_line:?} conf={conf:?} kind={kind_name}"
         );
+        let excerpt = {
+            let line = t_line
+                .or(parser_boundary)
+                .map(|l| l + shown_from)
+                .unwrap_or(0);
+            let raw_lines: Vec<&str> = text.split('\n').collect();
+            let from = line.saturating_sub(1);
+            let to = (line + 3).min(raw_lines.len());
+            raw_lines
+                .get(from..to)
+                .map(|ls| ls.join(" | "))
+                .unwrap_or_default()
+        };
         if let Some(w) = out_file.as_mut() {
             use std::io::Write;
             serde_json::to_writer(
@@ -324,6 +337,7 @@ fn refine(args: RefineArgs) -> Result<()> {
                     "teacher_line": t_line,
                     "teacher_conf": conf,
                     "mail_kind": kind_name,
+                    "excerpt": excerpt,
                 }),
             )?;
             writeln!(&mut *w)?;
